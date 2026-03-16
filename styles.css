@@ -1,0 +1,86 @@
+.yadisk-conflict-modal {
+	max-height: 70vh;
+	overflow-y: auto;
+}
+
+.yadisk-conflict-modal .conflict-list {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.yadisk-conflict-item {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 12px;
+}
+
+.yadisk-conflict-item .conflict-path {
+	font-weight: 600;
+	margin-bottom: 8px;
+	word-break: break-all;
+}
+
+.yadisk-conflict-item .conflict-details {
+	display: flex;
+	gap: 16px;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.yadisk-conflict-item .conflict-details .detail-col {
+	flex: 1;
+}
+
+.yadisk-conflict-item .conflict-details .detail-label {
+	font-weight: 500;
+	color: var(--text-normal);
+	margin-bottom: 4px;
+}
+
+.yadisk-conflict-item .conflict-choice {
+	display: flex;
+	gap: 8px;
+}
+
+.yadisk-conflict-item .conflict-choice button {
+	flex: 1;
+}
+
+.yadisk-conflict-item .conflict-choice button.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.yadisk-sync-settings .setting-instructions {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.yadisk-sync-settings .token-instruction {
+	background: var(--background-secondary);
+	border-radius: 4px;
+	padding: 8px 12px;
+	margin-bottom: 12px;
+	font-size: 0.85em;
+	line-height: 1.5;
+}
+
+.yadisk-sync-settings .connection-status {
+	padding: 8px 12px;
+	border-radius: 4px;
+	margin-top: 8px;
+	font-size: 0.85em;
+}
+
+.yadisk-sync-settings .connection-status.success {
+	background: var(--background-modifier-success);
+	color: var(--text-success);
+}
+
+.yadisk-sync-settings .connection-status.error {
+	background: var(--background-modifier-error);
+	color: var(--text-error);
+}

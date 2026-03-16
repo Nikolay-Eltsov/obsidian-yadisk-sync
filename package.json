@@ -1,0 +1,17 @@
+{
+	"name": "obsidian-yadisk-sync",
+	"version": "1.0.0",
+	"description": "Obsidian plugin for Yandex Disk synchronization",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.0",
+		"esbuild": "^0.20.0",
+		"obsidian": "latest",
+		"typescript": "^5.3.0"
+	},
+	"license": "MIT"
+}

@@ -1,0 +1,10 @@
+{
+	"id": "yadisk-sync",
+	"name": "Yandex Disk Sync",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Synchronize your vault with Yandex Disk. Supports bidirectional sync, conflict resolution, and works on mobile.",
+	"author": "eltsov_ni",
+	"authorUrl": "https://github.com/eltsov_ni",
+	"isDesktopOnly": false
+}
