@@ -44,7 +44,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.addSettingTab(new YaDiskSyncSettingTab(this.app, this));
 
-		this.addRibbonIcon("refresh-cw", "Yandex Disk Sync", () => {
+		this.addRibbonIcon("refresh-cw", "Sync vault", () => {
 			void this.runSync();
 		});
 
@@ -56,13 +56,13 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "push-all",
-			name: "Push all to Yandex Disk",
+			name: "Push all",
 			callback: () => void this.runSync(SyncDirection.Push),
 		});
 
 		this.addCommand({
 			id: "pull-all",
-			name: "Pull all from Yandex Disk",
+			name: "Pull all",
 			callback: () => void this.runSync(SyncDirection.Pull),
 		});
 
@@ -145,7 +145,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (this.syncInProgress) return;
 
 		if (!this.settings.accessToken) {
-			new Notice("YaDisk: authorize in plugin settings");
+			new Notice("Authorize in plugin settings first");
 			return;
 		}
 
@@ -164,12 +164,12 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 			if (stats.errors > 0) {
 				new Notice(
-					`YaDisk: done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`,
+					`Sync done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`,
 				);
 				this.updateStatusBar("error");
 			} else if (stats.uploaded + stats.downloaded + stats.deleted > 0) {
 				new Notice(
-					`YaDisk: up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`,
+					`Sync complete. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`,
 				);
 				this.updateStatusBar("idle");
 			} else {
@@ -177,7 +177,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 			}
 		} catch (e) {
 			console.error("[YaDisk Sync] Sync error:", e);
-			new Notice(`YaDisk: ${e instanceof Error ? e.message : String(e)}`);
+			new Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
 			this.updateStatusBar("error");
 		} finally {
 			this.syncInProgress = false;
@@ -188,7 +188,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private abortSync(): void {
 		if (this.currentEngine) {
 			this.currentEngine.abort();
-			new Notice("YaDisk: sync aborted");
+			new Notice("Sync aborted");
 			this.updateStatusBar("idle");
 		}
 	}
@@ -202,17 +202,17 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		switch (status) {
 			case "idle":
-				this.statusBarEl.setText("YaDisk: ok");
+				this.statusBarEl.setText("Synced");
 				break;
 			case "syncing":
 				if (current !== undefined && total !== undefined && total > 0) {
-					this.statusBarEl.setText(`YaDisk: ${current}/${total}`);
+					this.statusBarEl.setText(`Syncing ${current}/${total}`);
 				} else {
-					this.statusBarEl.setText("YaDisk: scanning...");
+					this.statusBarEl.setText("Scanning...");
 				}
 				break;
 			case "error":
-				this.statusBarEl.setText("YaDisk: error");
+				this.statusBarEl.setText("Sync error");
 				break;
 		}
 	}

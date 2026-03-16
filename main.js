@@ -1012,12 +1012,12 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("yadisk-sync-settings");
-    new import_obsidian4.Setting(containerEl).setName("Yandex Disk Sync").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Authorization").setHeading();
     const isAuthorized = !!this.plugin.settings.accessToken;
     if (!isAuthorized) {
-      const authSetting = new import_obsidian4.Setting(containerEl).setName("Sign in to Yandex").setDesc("Click the button, authorize in the browser, and copy the code");
+      const authSetting = new import_obsidian4.Setting(containerEl).setName("Sign in").setDesc("Click the button, authorize in the browser, and copy the code");
       authSetting.addButton(
-        (btn) => btn.setButtonText("Sign in with Yandex").setCta().onClick(() => {
+        (btn) => btn.setButtonText("Sign in").setCta().onClick(() => {
           const url = this.plugin.client.getAuthUrl();
           window.open(url);
         })
@@ -1039,7 +1039,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
             btn.setButtonText("...");
             btn.setDisabled(true);
             await this.plugin.client.exchangeCode(codeValue);
-            new import_obsidian4.Notice("Authorization successful!");
+            new import_obsidian4.Notice("Authorization successful");
             await this.plugin.saveSettings();
             this.display();
           } catch (e) {
@@ -1050,14 +1050,14 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         })
       );
     } else {
-      new import_obsidian4.Setting(containerEl).setName("Yandex account").setDesc("Authorized").addButton(
+      new import_obsidian4.Setting(containerEl).setName("Account").setDesc("Authorized").addButton(
         (btn) => btn.setButtonText("Check connection").onClick(async () => {
           var _a2, _b2;
           try {
             const info = await this.plugin.client.getDiskInfo();
             const login = ((_a2 = info.user) == null ? void 0 : _a2.display_name) || ((_b2 = info.user) == null ? void 0 : _b2.login) || "\u2014";
             const freeGB = ((info.total_space - info.used_space) / (1024 * 1024 * 1024)).toFixed(2);
-            new import_obsidian4.Notice(`${login} | Free: ${freeGB} GB`);
+            new import_obsidian4.Notice(`${login} \u2014 ${freeGB} GB free`);
           } catch (e) {
             new import_obsidian4.Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
           }
@@ -1072,9 +1072,9 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         })
       );
     }
-    new import_obsidian4.Setting(containerEl).setName("Sync settings").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Synchronization").setHeading();
     new import_obsidian4.Setting(containerEl).setName("Remote folder").addText(
-      (text) => text.setPlaceholder("/ObsidianVault").setValue(this.plugin.settings.remotePath).onChange(async (value) => {
+      (text) => text.setPlaceholder("/vault").setValue(this.plugin.settings.remotePath).onChange(async (value) => {
         this.plugin.settings.remotePath = value.trim() || DEFAULT_SETTINGS.remotePath;
         await this.plugin.saveSettings();
         this.plugin.client.setRemotePath(this.plugin.settings.remotePath);
@@ -1117,7 +1117,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName("Max file size (MB)").addText(
+    new import_obsidian4.Setting(containerEl).setName("Max file size (mb)").addText(
       (text) => text.setPlaceholder("50").setValue(String(this.plugin.settings.maxFileSizeMB)).onChange(async (value) => {
         const num = parseInt(value, 10);
         this.plugin.settings.maxFileSizeMB = isNaN(num) ? 50 : Math.max(1, num);
@@ -1125,9 +1125,9 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       })
     );
     new import_obsidian4.Setting(containerEl).setName("Reset sync state").setDesc("Next sync will be a full comparison").addButton(
-      (btn) => btn.setButtonText("Reset").setWarning().onClick(async () => {
+      (btn) => btn.setButtonText("Reset").setWarning().onClick((evt) => {
         this.plugin.stateManager.resetState();
-        await this.plugin.saveSettings();
+        void this.plugin.saveSettings();
         btn.setButtonText("Done!");
         setTimeout(() => btn.setButtonText("Reset"), 2e3);
       })
@@ -1169,7 +1169,7 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
       this.stateManager.loadFromData(data);
     }
     this.addSettingTab(new YaDiskSyncSettingTab(this.app, this));
-    this.addRibbonIcon("refresh-cw", "Yandex Disk Sync", () => {
+    this.addRibbonIcon("refresh-cw", "Sync vault", () => {
       void this.runSync();
     });
     this.addCommand({
@@ -1179,12 +1179,12 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
     });
     this.addCommand({
       id: "push-all",
-      name: "Push all to Yandex Disk",
+      name: "Push all",
       callback: () => void this.runSync("push" /* Push */)
     });
     this.addCommand({
       id: "pull-all",
-      name: "Pull all from Yandex Disk",
+      name: "Pull all",
       callback: () => void this.runSync("pull" /* Pull */)
     });
     this.addCommand({
@@ -1256,7 +1256,7 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
     if (this.syncInProgress)
       return;
     if (!this.settings.accessToken) {
-      new import_obsidian5.Notice("YaDisk: authorize in plugin settings");
+      new import_obsidian5.Notice("Authorize in plugin settings first");
       return;
     }
     this.syncInProgress = true;
@@ -1270,12 +1270,12 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
       await this.saveSettings();
       if (stats.errors > 0) {
         new import_obsidian5.Notice(
-          `YaDisk: done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`
+          `Sync done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`
         );
         this.updateStatusBar("error");
       } else if (stats.uploaded + stats.downloaded + stats.deleted > 0) {
         new import_obsidian5.Notice(
-          `YaDisk: up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`
+          `Sync complete. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`
         );
         this.updateStatusBar("idle");
       } else {
@@ -1283,7 +1283,7 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
       }
     } catch (e) {
       console.error("[YaDisk Sync] Sync error:", e);
-      new import_obsidian5.Notice(`YaDisk: ${e instanceof Error ? e.message : String(e)}`);
+      new import_obsidian5.Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
       this.updateStatusBar("error");
     } finally {
       this.syncInProgress = false;
@@ -1293,7 +1293,7 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
   abortSync() {
     if (this.currentEngine) {
       this.currentEngine.abort();
-      new import_obsidian5.Notice("YaDisk: sync aborted");
+      new import_obsidian5.Notice("Sync aborted");
       this.updateStatusBar("idle");
     }
   }
@@ -1302,17 +1302,17 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
       return;
     switch (status) {
       case "idle":
-        this.statusBarEl.setText("YaDisk: ok");
+        this.statusBarEl.setText("Synced");
         break;
       case "syncing":
         if (current !== void 0 && total !== void 0 && total > 0) {
-          this.statusBarEl.setText(`YaDisk: ${current}/${total}`);
+          this.statusBarEl.setText(`Syncing ${current}/${total}`);
         } else {
-          this.statusBarEl.setText("YaDisk: scanning...");
+          this.statusBarEl.setText("Scanning...");
         }
         break;
       case "error":
-        this.statusBarEl.setText("YaDisk: error");
+        this.statusBarEl.setText("Sync error");
         break;
     }
   }

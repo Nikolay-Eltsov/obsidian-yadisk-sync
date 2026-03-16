@@ -15,17 +15,17 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.addClass("yadisk-sync-settings");
 
-		new Setting(containerEl).setName("Yandex Disk Sync").setHeading();
+		new Setting(containerEl).setName("Authorization").setHeading();
 
 		const isAuthorized = !!this.plugin.settings.accessToken;
 
 		if (!isAuthorized) {
 			const authSetting = new Setting(containerEl)
-				.setName("Sign in to Yandex")
+				.setName("Sign in")
 				.setDesc("Click the button, authorize in the browser, and copy the code");
 
 			authSetting.addButton((btn) =>
-				btn.setButtonText("Sign in with Yandex").setCta().onClick(() => {
+				btn.setButtonText("Sign in").setCta().onClick(() => {
 					const url = this.plugin.client.getAuthUrl();
 					window.open(url);
 				}),
@@ -52,7 +52,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 						btn.setButtonText("...");
 						btn.setDisabled(true);
 						await this.plugin.client.exchangeCode(codeValue);
-						new Notice("Authorization successful!");
+						new Notice("Authorization successful");
 						await this.plugin.saveSettings();
 						this.display();
 					} catch (e) {
@@ -64,7 +64,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 		} else {
 			new Setting(containerEl)
-				.setName("Yandex account")
+				.setName("Account")
 				.setDesc("Authorized")
 				.addButton((btn) =>
 					btn.setButtonText("Check connection").onClick(async () => {
@@ -72,7 +72,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 							const info = await this.plugin.client.getDiskInfo();
 							const login = info.user?.display_name || info.user?.login || "—";
 							const freeGB = ((info.total_space - info.used_space) / (1024 * 1024 * 1024)).toFixed(2);
-							new Notice(`${login} | Free: ${freeGB} GB`);
+							new Notice(`${login} — ${freeGB} GB free`);
 						} catch (e) {
 							new Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
 						}
@@ -92,13 +92,13 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				);
 		}
 
-		new Setting(containerEl).setName("Sync settings").setHeading();
+		new Setting(containerEl).setName("Synchronization").setHeading();
 
 		new Setting(containerEl)
 			.setName("Remote folder")
 			.addText((text) =>
 				text
-					.setPlaceholder("/ObsidianVault")
+					.setPlaceholder("/vault")
 					.setValue(this.plugin.settings.remotePath)
 					.onChange(async (value) => {
 						this.plugin.settings.remotePath = value.trim() || DEFAULT_SETTINGS.remotePath;
@@ -183,7 +183,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Max file size (MB)")
+			.setName("Max file size (mb)")
 			.addText((text) =>
 				text
 					.setPlaceholder("50")
@@ -202,9 +202,9 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				btn
 					.setButtonText("Reset")
 					.setWarning()
-					.onClick(async () => {
+					.onClick((evt) => {
 						this.plugin.stateManager.resetState();
-						await this.plugin.saveSettings();
+						void this.plugin.saveSettings();
 						btn.setButtonText("Done!");
 						setTimeout(() => btn.setButtonText("Reset"), 2000);
 					}),
