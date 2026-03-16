@@ -15,73 +15,72 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.addClass("yadisk-sync-settings");
 
-		containerEl.createEl("h2", { text: "Yandex Disk Sync" });
+		new Setting(containerEl).setName("Yandex Disk Sync").setHeading();
 
-		// ── Authorization ──
 		const isAuthorized = !!this.plugin.settings.accessToken;
 
 		if (!isAuthorized) {
 			const authSetting = new Setting(containerEl)
-				.setName("Войти в Яндекс")
-				.setDesc("Нажмите кнопку, авторизуйтесь в браузере и скопируйте код");
+				.setName("Sign in to Yandex")
+				.setDesc("Click the button, authorize in the browser, and copy the code");
 
 			authSetting.addButton((btn) =>
-				btn.setButtonText("Войти через Яндекс").setCta().onClick(() => {
+				btn.setButtonText("Sign in with Yandex").setCta().onClick(() => {
 					const url = this.plugin.client.getAuthUrl();
 					window.open(url);
 				}),
 			);
 
 			const codeSetting = new Setting(containerEl)
-				.setName("Код авторизации")
-				.setDesc("Вставьте код, полученный после авторизации");
+				.setName("Authorization code")
+				.setDesc("Paste the code you received after authorization");
 
 			let codeValue = "";
 			codeSetting.addText((text) =>
-				text.setPlaceholder("Вставьте код сюда").onChange((value) => {
+				text.setPlaceholder("Paste code here").onChange((value) => {
 					codeValue = value.trim();
 				}),
 			);
 
 			codeSetting.addButton((btn) =>
-				btn.setButtonText("Подтвердить").onClick(async () => {
+				btn.setButtonText("Confirm").onClick(async () => {
 					if (!codeValue) {
-						new Notice("Введите код авторизации");
+						new Notice("Enter the authorization code");
 						return;
 					}
 					try {
 						btn.setButtonText("...");
 						btn.setDisabled(true);
 						await this.plugin.client.exchangeCode(codeValue);
-						new Notice("Авторизация успешна!");
+						new Notice("Authorization successful!");
 						await this.plugin.saveSettings();
 						this.display();
 					} catch (e) {
-						new Notice(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
-						btn.setButtonText("Подтвердить");
+						new Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
+						btn.setButtonText("Confirm");
 						btn.setDisabled(false);
 					}
 				}),
 			);
 		} else {
 			new Setting(containerEl)
-				.setName("Аккаунт Яндекс")
-				.setDesc("Авторизован")
+				.setName("Yandex account")
+				.setDesc("Authorized")
 				.addButton((btn) =>
-					btn.setButtonText("Проверить").onClick(async () => {
+					btn.setButtonText("Check connection").onClick(async () => {
 						try {
 							const info = await this.plugin.client.getDiskInfo();
 							const login = info.user?.display_name || info.user?.login || "—";
 							const freeGB = ((info.total_space - info.used_space) / (1024 * 1024 * 1024)).toFixed(2);
-							new Notice(`${login} | Свободно: ${freeGB} ГБ`);
+							new Notice(`${login} | Free: ${freeGB} GB`);
 						} catch (e) {
-							new Notice(`Ошибка: ${e instanceof Error ? e.message : String(e)}`);
+							new Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
 						}
 					}),
 				)
 				.addButton((btn) =>
 					btn
-						.setButtonText("Выйти")
+						.setButtonText("Sign out")
 						.setWarning()
 						.onClick(async () => {
 							this.plugin.settings.accessToken = "";
@@ -93,11 +92,10 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				);
 		}
 
-		// ── Sync Settings ──
-		containerEl.createEl("h3", { text: "Синхронизация" });
+		new Setting(containerEl).setName("Sync settings").setHeading();
 
 		new Setting(containerEl)
-			.setName("Папка на Яндекс Диске")
+			.setName("Remote folder")
 			.addText((text) =>
 				text
 					.setPlaceholder("/ObsidianVault")
@@ -110,12 +108,12 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Направление")
+			.setName("Direction")
 			.addDropdown((dd) =>
 				dd
-					.addOption(SyncDirection.Bidirectional, "Двусторонняя")
-					.addOption(SyncDirection.Push, "Только загрузка (Push)")
-					.addOption(SyncDirection.Pull, "Только скачивание (Pull)")
+					.addOption(SyncDirection.Bidirectional, "Bidirectional")
+					.addOption(SyncDirection.Push, "Push only")
+					.addOption(SyncDirection.Pull, "Pull only")
 					.setValue(this.plugin.settings.syncDirection)
 					.onChange(async (value) => {
 						this.plugin.settings.syncDirection = value as SyncDirection;
@@ -124,13 +122,13 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Конфликты")
+			.setName("Conflict strategy")
 			.addDropdown((dd) =>
 				dd
-					.addOption(ConflictStrategy.NewerWins, "Побеждает новый")
-					.addOption(ConflictStrategy.LocalWins, "Побеждает локальный")
-					.addOption(ConflictStrategy.RemoteWins, "Побеждает удалённый")
-					.addOption(ConflictStrategy.Ask, "Спросить")
+					.addOption(ConflictStrategy.NewerWins, "Newer wins")
+					.addOption(ConflictStrategy.LocalWins, "Local wins")
+					.addOption(ConflictStrategy.RemoteWins, "Remote wins")
+					.addOption(ConflictStrategy.Ask, "Ask")
 					.setValue(this.plugin.settings.conflictStrategy)
 					.onChange(async (value) => {
 						this.plugin.settings.conflictStrategy = value as ConflictStrategy;
@@ -139,8 +137,8 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Автосинхронизация (минуты)")
-			.setDesc("0 = отключено")
+			.setName("Auto-sync interval (minutes)")
+			.setDesc("0 = disabled")
 			.addText((text) =>
 				text
 					.setPlaceholder("0")
@@ -154,7 +152,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Синхронизация при запуске")
+			.setName("Sync on startup")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
 					this.plugin.settings.syncOnStartup = value;
@@ -162,16 +160,18 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				}),
 			);
 
+		const configDir = this.app.vault.configDir;
+
 		new Setting(containerEl)
-			.setName("Исключения")
-			.setDesc("По одному паттерну на строку")
+			.setName("Exclude patterns")
+			.setDesc("One pattern per line")
 			.addTextArea((ta) =>
 				ta
-					.setPlaceholder(".obsidian/workspace*.json\n.trash/**")
+					.setPlaceholder(`${configDir}/workspace*.json\n.trash/**`)
 					.setValue(this.plugin.settings.excludePatterns.join("\n"))
 					.then((t) => {
 						t.inputEl.rows = 5;
-						t.inputEl.style.width = "100%";
+						t.inputEl.addClass("yadisk-textarea-wide");
 					})
 					.onChange(async (value) => {
 						this.plugin.settings.excludePatterns = value
@@ -183,7 +183,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Макс. размер файла (МБ)")
+			.setName("Max file size (MB)")
 			.addText((text) =>
 				text
 					.setPlaceholder("50")
@@ -196,17 +196,17 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Сбросить состояние синхронизации")
-			.setDesc("Следующая синхронизация будет полной")
+			.setName("Reset sync state")
+			.setDesc("Next sync will be a full comparison")
 			.addButton((btn) =>
 				btn
-					.setButtonText("Сбросить")
+					.setButtonText("Reset")
 					.setWarning()
 					.onClick(async () => {
 						this.plugin.stateManager.resetState();
 						await this.plugin.saveSettings();
-						btn.setButtonText("Сброшено!");
-						setTimeout(() => btn.setButtonText("Сбросить"), 2000);
+						btn.setButtonText("Done!");
+						setTimeout(() => btn.setButtonText("Reset"), 2000);
 					}),
 			);
 	}

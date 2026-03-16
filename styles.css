@@ -84,3 +84,7 @@
 	background: var(--background-modifier-error);
 	color: var(--text-error);
 }
+
+.yadisk-textarea-wide {
+	width: 100%;
+}

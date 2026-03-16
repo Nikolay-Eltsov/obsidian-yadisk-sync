@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App } from "obsidian";
 import { FileRecord, SyncState, YaDiskSyncSettings } from "./types";
 import { matchesExcludePattern } from "./utils";
 import { md5 } from "./md5";
@@ -37,15 +37,25 @@ export class SyncStateManager {
 		this.state = { ...EMPTY_STATE, localSnapshot: {}, remoteSnapshot: {} };
 	}
 
+	private getEffectiveExcludePatterns(settings: YaDiskSyncSettings): string[] {
+		const configDir = this.app.vault.configDir;
+		return [
+			...settings.excludePatterns,
+			`${configDir}/workspace*.json`,
+			`${configDir}/plugins/*/data.json`,
+		];
+	}
+
 	async buildLocalSnapshot(
 		settings: YaDiskSyncSettings,
 		prevSnapshot: Record<string, FileRecord>,
 	): Promise<Record<string, FileRecord>> {
 		const files = this.app.vault.getFiles();
 		const snapshot: Record<string, FileRecord> = {};
+		const patterns = this.getEffectiveExcludePatterns(settings);
 
 		for (const file of files) {
-			if (matchesExcludePattern(file.path, settings.excludePatterns)) continue;
+			if (matchesExcludePattern(file.path, patterns)) continue;
 
 			const sizeMB = file.stat.size / (1024 * 1024);
 			if (sizeMB > settings.maxFileSizeMB) continue;
@@ -79,8 +89,10 @@ export class SyncStateManager {
 		const records = await client.listAllRecursive(remotePath);
 		const snapshot: Record<string, FileRecord> = {};
 
+		const patterns = this.getEffectiveExcludePatterns(settings);
+
 		for (const record of records) {
-			if (matchesExcludePattern(record.path, settings.excludePatterns)) continue;
+			if (matchesExcludePattern(record.path, patterns)) continue;
 
 			const sizeMB = record.size / (1024 * 1024);
 			if (sizeMB > settings.maxFileSizeMB) continue;

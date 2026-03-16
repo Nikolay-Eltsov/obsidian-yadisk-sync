@@ -22,7 +22,7 @@ __export(main_exports, {
   default: () => YaDiskSyncPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/types.ts
 var DEFAULT_SETTINGS = {
@@ -34,8 +34,6 @@ var DEFAULT_SETTINGS = {
   conflictStrategy: "newer_wins" /* NewerWins */,
   autoSyncInterval: 0,
   excludePatterns: [
-    ".obsidian/workspace*.json",
-    ".obsidian/plugins/*/data.json",
     ".trash/**"
   ],
   maxFileSizeMB: 50,
@@ -357,6 +355,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// src/sync-engine.ts
+var import_obsidian3 = require("obsidian");
+
 // src/conflict-modal.ts
 var import_obsidian2 = require("obsidian");
 var ConflictModal = class extends import_obsidian2.Modal {
@@ -518,15 +519,6 @@ var SyncEngine = class {
     const actionItems = plan.filter((p) => p.action !== "skip" /* Skip */);
     const total = actionItems.length;
     let current = 0;
-    const uploadNewDirs = /* @__PURE__ */ new Set();
-    for (const item of actionItems) {
-      if (item.action === "upload_new" /* UploadNew */ || item.action === "upload_modified" /* UploadModified */) {
-        const parts = item.path.split("/");
-        for (let i = 1; i < parts.length; i++) {
-          uploadNewDirs.add(parts.slice(0, i).join("/"));
-        }
-      }
-    }
     const creates = actionItems.filter(
       (i) => i.action === "upload_new" /* UploadNew */ || i.action === "download_new" /* DownloadNew */
     );
@@ -750,7 +742,7 @@ var SyncEngine = class {
   }
   async executeUpload(item) {
     const file = this.app.vault.getAbstractFileByPath(item.path);
-    if (!file)
+    if (!file || !(file instanceof import_obsidian3.TFile))
       throw new Error(`Local file not found: ${item.path}`);
     const data = await this.app.vault.readBinary(file);
     const remotePath = this.client.toRemotePath(item.path);
@@ -760,7 +752,7 @@ var SyncEngine = class {
     const remotePath = this.client.toRemotePath(item.path);
     const data = await this.client.downloadFile(remotePath);
     const existingFile = this.app.vault.getAbstractFileByPath(item.path);
-    if (existingFile) {
+    if (existingFile && existingFile instanceof import_obsidian3.TFile) {
       await this.app.vault.modifyBinary(existingFile, data);
     } else {
       const parentPath = item.path.substring(0, item.path.lastIndexOf("/"));
@@ -777,7 +769,7 @@ var SyncEngine = class {
   async executeDeleteLocal(item) {
     const file = this.app.vault.getAbstractFileByPath(item.path);
     if (file) {
-      await this.app.vault.delete(file);
+      await this.app.fileManager.trashFile(file);
     }
   }
   async ensureLocalFolder(folderPath) {
@@ -958,11 +950,20 @@ var SyncStateManager = class {
   resetState() {
     this.state = { ...EMPTY_STATE, localSnapshot: {}, remoteSnapshot: {} };
   }
+  getEffectiveExcludePatterns(settings) {
+    const configDir = this.app.vault.configDir;
+    return [
+      ...settings.excludePatterns,
+      `${configDir}/workspace*.json`,
+      `${configDir}/plugins/*/data.json`
+    ];
+  }
   async buildLocalSnapshot(settings, prevSnapshot) {
     const files = this.app.vault.getFiles();
     const snapshot = {};
+    const patterns = this.getEffectiveExcludePatterns(settings);
     for (const file of files) {
-      if (matchesExcludePattern(file.path, settings.excludePatterns))
+      if (matchesExcludePattern(file.path, patterns))
         continue;
       const sizeMB = file.stat.size / (1024 * 1024);
       if (sizeMB > settings.maxFileSizeMB)
@@ -987,8 +988,9 @@ var SyncStateManager = class {
   async buildRemoteSnapshot(client, remotePath, settings) {
     const records = await client.listAllRecursive(remotePath);
     const snapshot = {};
+    const patterns = this.getEffectiveExcludePatterns(settings);
     for (const record of records) {
-      if (matchesExcludePattern(record.path, settings.excludePatterns))
+      if (matchesExcludePattern(record.path, patterns))
         continue;
       const sizeMB = record.size / (1024 * 1024);
       if (sizeMB > settings.maxFileSizeMB)
@@ -1000,8 +1002,8 @@ var SyncStateManager = class {
 };
 
 // src/settings.ts
-var import_obsidian3 = require("obsidian");
-var YaDiskSyncSettingTab = class extends import_obsidian3.PluginSettingTab {
+var import_obsidian4 = require("obsidian");
+var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -1010,58 +1012,58 @@ var YaDiskSyncSettingTab = class extends import_obsidian3.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.addClass("yadisk-sync-settings");
-    containerEl.createEl("h2", { text: "Yandex Disk Sync" });
+    new import_obsidian4.Setting(containerEl).setName("Yandex Disk Sync").setHeading();
     const isAuthorized = !!this.plugin.settings.accessToken;
     if (!isAuthorized) {
-      const authSetting = new import_obsidian3.Setting(containerEl).setName("\u0412\u043E\u0439\u0442\u0438 \u0432 \u042F\u043D\u0434\u0435\u043A\u0441").setDesc("\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u043A\u043D\u043E\u043F\u043A\u0443, \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0443\u0439\u0442\u0435\u0441\u044C \u0432 \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u0435 \u0438 \u0441\u043A\u043E\u043F\u0438\u0440\u0443\u0439\u0442\u0435 \u043A\u043E\u0434");
+      const authSetting = new import_obsidian4.Setting(containerEl).setName("Sign in to Yandex").setDesc("Click the button, authorize in the browser, and copy the code");
       authSetting.addButton(
-        (btn) => btn.setButtonText("\u0412\u043E\u0439\u0442\u0438 \u0447\u0435\u0440\u0435\u0437 \u042F\u043D\u0434\u0435\u043A\u0441").setCta().onClick(() => {
+        (btn) => btn.setButtonText("Sign in with Yandex").setCta().onClick(() => {
           const url = this.plugin.client.getAuthUrl();
           window.open(url);
         })
       );
-      const codeSetting = new import_obsidian3.Setting(containerEl).setName("\u041A\u043E\u0434 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438").setDesc("\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043A\u043E\u0434, \u043F\u043E\u043B\u0443\u0447\u0435\u043D\u043D\u044B\u0439 \u043F\u043E\u0441\u043B\u0435 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438");
+      const codeSetting = new import_obsidian4.Setting(containerEl).setName("Authorization code").setDesc("Paste the code you received after authorization");
       let codeValue = "";
       codeSetting.addText(
-        (text) => text.setPlaceholder("\u0412\u0441\u0442\u0430\u0432\u044C\u0442\u0435 \u043A\u043E\u0434 \u0441\u044E\u0434\u0430").onChange((value) => {
+        (text) => text.setPlaceholder("Paste code here").onChange((value) => {
           codeValue = value.trim();
         })
       );
       codeSetting.addButton(
-        (btn) => btn.setButtonText("\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C").onClick(async () => {
+        (btn) => btn.setButtonText("Confirm").onClick(async () => {
           if (!codeValue) {
-            new import_obsidian3.Notice("\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u043A\u043E\u0434 \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u0438");
+            new import_obsidian4.Notice("Enter the authorization code");
             return;
           }
           try {
             btn.setButtonText("...");
             btn.setDisabled(true);
             await this.plugin.client.exchangeCode(codeValue);
-            new import_obsidian3.Notice("\u0410\u0432\u0442\u043E\u0440\u0438\u0437\u0430\u0446\u0438\u044F \u0443\u0441\u043F\u0435\u0448\u043D\u0430!");
+            new import_obsidian4.Notice("Authorization successful!");
             await this.plugin.saveSettings();
             this.display();
           } catch (e) {
-            new import_obsidian3.Notice(`\u041E\u0448\u0438\u0431\u043A\u0430: ${e instanceof Error ? e.message : String(e)}`);
-            btn.setButtonText("\u041F\u043E\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044C");
+            new import_obsidian4.Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
+            btn.setButtonText("Confirm");
             btn.setDisabled(false);
           }
         })
       );
     } else {
-      new import_obsidian3.Setting(containerEl).setName("\u0410\u043A\u043A\u0430\u0443\u043D\u0442 \u042F\u043D\u0434\u0435\u043A\u0441").setDesc("\u0410\u0432\u0442\u043E\u0440\u0438\u0437\u043E\u0432\u0430\u043D").addButton(
-        (btn) => btn.setButtonText("\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C").onClick(async () => {
+      new import_obsidian4.Setting(containerEl).setName("Yandex account").setDesc("Authorized").addButton(
+        (btn) => btn.setButtonText("Check connection").onClick(async () => {
           var _a2, _b2;
           try {
             const info = await this.plugin.client.getDiskInfo();
             const login = ((_a2 = info.user) == null ? void 0 : _a2.display_name) || ((_b2 = info.user) == null ? void 0 : _b2.login) || "\u2014";
             const freeGB = ((info.total_space - info.used_space) / (1024 * 1024 * 1024)).toFixed(2);
-            new import_obsidian3.Notice(`${login} | \u0421\u0432\u043E\u0431\u043E\u0434\u043D\u043E: ${freeGB} \u0413\u0411`);
+            new import_obsidian4.Notice(`${login} | Free: ${freeGB} GB`);
           } catch (e) {
-            new import_obsidian3.Notice(`\u041E\u0448\u0438\u0431\u043A\u0430: ${e instanceof Error ? e.message : String(e)}`);
+            new import_obsidian4.Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
           }
         })
       ).addButton(
-        (btn) => btn.setButtonText("\u0412\u044B\u0439\u0442\u0438").setWarning().onClick(async () => {
+        (btn) => btn.setButtonText("Sign out").setWarning().onClick(async () => {
           this.plugin.settings.accessToken = "";
           this.plugin.settings.refreshToken = "";
           this.plugin.settings.tokenExpiresAt = 0;
@@ -1070,27 +1072,27 @@ var YaDiskSyncSettingTab = class extends import_obsidian3.PluginSettingTab {
         })
       );
     }
-    containerEl.createEl("h3", { text: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F" });
-    new import_obsidian3.Setting(containerEl).setName("\u041F\u0430\u043F\u043A\u0430 \u043D\u0430 \u042F\u043D\u0434\u0435\u043A\u0441 \u0414\u0438\u0441\u043A\u0435").addText(
+    new import_obsidian4.Setting(containerEl).setName("Sync settings").setHeading();
+    new import_obsidian4.Setting(containerEl).setName("Remote folder").addText(
       (text) => text.setPlaceholder("/ObsidianVault").setValue(this.plugin.settings.remotePath).onChange(async (value) => {
         this.plugin.settings.remotePath = value.trim() || DEFAULT_SETTINGS.remotePath;
         await this.plugin.saveSettings();
         this.plugin.client.setRemotePath(this.plugin.settings.remotePath);
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u041D\u0430\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435").addDropdown(
-      (dd) => dd.addOption("bidirectional" /* Bidirectional */, "\u0414\u0432\u0443\u0441\u0442\u043E\u0440\u043E\u043D\u043D\u044F\u044F").addOption("push" /* Push */, "\u0422\u043E\u043B\u044C\u043A\u043E \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0430 (Push)").addOption("pull" /* Pull */, "\u0422\u043E\u043B\u044C\u043A\u043E \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435 (Pull)").setValue(this.plugin.settings.syncDirection).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Direction").addDropdown(
+      (dd) => dd.addOption("bidirectional" /* Bidirectional */, "Bidirectional").addOption("push" /* Push */, "Push only").addOption("pull" /* Pull */, "Pull only").setValue(this.plugin.settings.syncDirection).onChange(async (value) => {
         this.plugin.settings.syncDirection = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442\u044B").addDropdown(
-      (dd) => dd.addOption("newer_wins" /* NewerWins */, "\u041F\u043E\u0431\u0435\u0436\u0434\u0430\u0435\u0442 \u043D\u043E\u0432\u044B\u0439").addOption("local_wins" /* LocalWins */, "\u041F\u043E\u0431\u0435\u0436\u0434\u0430\u0435\u0442 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439").addOption("remote_wins" /* RemoteWins */, "\u041F\u043E\u0431\u0435\u0436\u0434\u0430\u0435\u0442 \u0443\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0439").addOption("ask" /* Ask */, "\u0421\u043F\u0440\u043E\u0441\u0438\u0442\u044C").setValue(this.plugin.settings.conflictStrategy).onChange(async (value) => {
+    new import_obsidian4.Setting(containerEl).setName("Conflict strategy").addDropdown(
+      (dd) => dd.addOption("newer_wins" /* NewerWins */, "Newer wins").addOption("local_wins" /* LocalWins */, "Local wins").addOption("remote_wins" /* RemoteWins */, "Remote wins").addOption("ask" /* Ask */, "Ask").setValue(this.plugin.settings.conflictStrategy).onChange(async (value) => {
         this.plugin.settings.conflictStrategy = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u0410\u0432\u0442\u043E\u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F (\u043C\u0438\u043D\u0443\u0442\u044B)").setDesc("0 = \u043E\u0442\u043A\u043B\u044E\u0447\u0435\u043D\u043E").addText(
+    new import_obsidian4.Setting(containerEl).setName("Auto-sync interval (minutes)").setDesc("0 = disabled").addText(
       (text) => text.setPlaceholder("0").setValue(String(this.plugin.settings.autoSyncInterval)).onChange(async (value) => {
         const num = parseInt(value, 10);
         this.plugin.settings.autoSyncInterval = isNaN(num) ? 0 : Math.max(0, num);
@@ -1098,34 +1100,36 @@ var YaDiskSyncSettingTab = class extends import_obsidian3.PluginSettingTab {
         this.plugin.setupAutoSync();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u043F\u0440\u0438 \u0437\u0430\u043F\u0443\u0441\u043A\u0435").addToggle(
+    new import_obsidian4.Setting(containerEl).setName("Sync on startup").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
         this.plugin.settings.syncOnStartup = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u0418\u0441\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F").setDesc("\u041F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u043F\u0430\u0442\u0442\u0435\u0440\u043D\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443").addTextArea(
-      (ta) => ta.setPlaceholder(".obsidian/workspace*.json\n.trash/**").setValue(this.plugin.settings.excludePatterns.join("\n")).then((t) => {
+    const configDir = this.app.vault.configDir;
+    new import_obsidian4.Setting(containerEl).setName("Exclude patterns").setDesc("One pattern per line").addTextArea(
+      (ta) => ta.setPlaceholder(`${configDir}/workspace*.json
+.trash/**`).setValue(this.plugin.settings.excludePatterns.join("\n")).then((t) => {
         t.inputEl.rows = 5;
-        t.inputEl.style.width = "100%";
+        t.inputEl.addClass("yadisk-textarea-wide");
       }).onChange(async (value) => {
         this.plugin.settings.excludePatterns = value.split("\n").map((s) => s.trim()).filter(Boolean);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u041C\u0430\u043A\u0441. \u0440\u0430\u0437\u043C\u0435\u0440 \u0444\u0430\u0439\u043B\u0430 (\u041C\u0411)").addText(
+    new import_obsidian4.Setting(containerEl).setName("Max file size (MB)").addText(
       (text) => text.setPlaceholder("50").setValue(String(this.plugin.settings.maxFileSizeMB)).onChange(async (value) => {
         const num = parseInt(value, 10);
         this.plugin.settings.maxFileSizeMB = isNaN(num) ? 50 : Math.max(1, num);
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian3.Setting(containerEl).setName("\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438").setDesc("\u0421\u043B\u0435\u0434\u0443\u044E\u0449\u0430\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0431\u0443\u0434\u0435\u0442 \u043F\u043E\u043B\u043D\u043E\u0439").addButton(
-      (btn) => btn.setButtonText("\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C").setWarning().onClick(async () => {
+    new import_obsidian4.Setting(containerEl).setName("Reset sync state").setDesc("Next sync will be a full comparison").addButton(
+      (btn) => btn.setButtonText("Reset").setWarning().onClick(async () => {
         this.plugin.stateManager.resetState();
         await this.plugin.saveSettings();
-        btn.setButtonText("\u0421\u0431\u0440\u043E\u0448\u0435\u043D\u043E!");
-        setTimeout(() => btn.setButtonText("\u0421\u0431\u0440\u043E\u0441\u0438\u0442\u044C"), 2e3);
+        btn.setButtonText("Done!");
+        setTimeout(() => btn.setButtonText("Reset"), 2e3);
       })
     );
   }
@@ -1133,7 +1137,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian3.PluginSettingTab {
 
 // src/main.ts
 var DEBOUNCE_DELAY = 5e3;
-var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
+var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -1157,7 +1161,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
       this.settings.accessToken = accessToken;
       this.settings.refreshToken = refreshToken;
       this.settings.tokenExpiresAt = expiresAt;
-      this.saveSettings();
+      void this.saveSettings();
     });
     this.stateManager = new SyncStateManager(this.app);
     const data = await this.loadData();
@@ -1166,26 +1170,26 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
     }
     this.addSettingTab(new YaDiskSyncSettingTab(this.app, this));
     this.addRibbonIcon("refresh-cw", "Yandex Disk Sync", () => {
-      this.runSync();
+      void this.runSync();
     });
     this.addCommand({
       id: "sync-now",
-      name: "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441",
-      callback: () => this.runSync()
+      name: "Sync now",
+      callback: () => void this.runSync()
     });
     this.addCommand({
       id: "push-all",
-      name: "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0432\u0441\u0451 \u043D\u0430 \u042F\u043D\u0434\u0435\u043A\u0441 \u0414\u0438\u0441\u043A (Push)",
-      callback: () => this.runSync("push" /* Push */)
+      name: "Push all to Yandex Disk",
+      callback: () => void this.runSync("push" /* Push */)
     });
     this.addCommand({
       id: "pull-all",
-      name: "\u0421\u043A\u0430\u0447\u0430\u0442\u044C \u0432\u0441\u0451 \u0441 \u042F\u043D\u0434\u0435\u043A\u0441 \u0414\u0438\u0441\u043A\u0430 (Pull)",
-      callback: () => this.runSync("pull" /* Pull */)
+      name: "Pull all from Yandex Disk",
+      callback: () => void this.runSync("pull" /* Pull */)
     });
     this.addCommand({
       id: "abort-sync",
-      name: "\u041F\u0440\u0435\u0440\u0432\u0430\u0442\u044C \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E",
+      name: "Abort sync",
       callback: () => this.abortSync()
     });
     this.statusBarEl = this.addStatusBarItem();
@@ -1196,7 +1200,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
     if (this.settings.syncOnStartup && this.settings.accessToken) {
-      setTimeout(() => this.runSync(), 3e3);
+      setTimeout(() => void this.runSync(), 3e3);
     }
   }
   onunload() {
@@ -1217,7 +1221,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
     }
     this.debouncedSyncTimer = setTimeout(() => {
       this.debouncedSyncTimer = null;
-      this.runSync();
+      void this.runSync();
     }, DEBOUNCE_DELAY);
   }
   async loadSettings() {
@@ -1244,7 +1248,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
     if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
       const ms = this.settings.autoSyncInterval * 60 * 1e3;
       this.autoSyncIntervalId = this.registerInterval(
-        window.setInterval(() => this.runSync(), ms)
+        window.setInterval(() => void this.runSync(), ms)
       );
     }
   }
@@ -1252,7 +1256,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
     if (this.syncInProgress)
       return;
     if (!this.settings.accessToken) {
-      new import_obsidian4.Notice("YaDisk: \u0430\u0432\u0442\u043E\u0440\u0438\u0437\u0443\u0439\u0442\u0435\u0441\u044C \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445 \u043F\u043B\u0430\u0433\u0438\u043D\u0430");
+      new import_obsidian5.Notice("YaDisk: authorize in plugin settings");
       return;
     }
     this.syncInProgress = true;
@@ -1265,13 +1269,13 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
       });
       await this.saveSettings();
       if (stats.errors > 0) {
-        new import_obsidian4.Notice(
-          `YaDisk: \u2191${stats.uploaded} \u2193${stats.downloaded} \u2715${stats.deleted} \u26A0${stats.errors}`
+        new import_obsidian5.Notice(
+          `YaDisk: done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`
         );
         this.updateStatusBar("error");
       } else if (stats.uploaded + stats.downloaded + stats.deleted > 0) {
-        new import_obsidian4.Notice(
-          `YaDisk: \u2191${stats.uploaded} \u2193${stats.downloaded} \u2715${stats.deleted}`
+        new import_obsidian5.Notice(
+          `YaDisk: up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`
         );
         this.updateStatusBar("idle");
       } else {
@@ -1279,7 +1283,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
       }
     } catch (e) {
       console.error("[YaDisk Sync] Sync error:", e);
-      new import_obsidian4.Notice(`YaDisk: ${e instanceof Error ? e.message : String(e)}`);
+      new import_obsidian5.Notice(`YaDisk: ${e instanceof Error ? e.message : String(e)}`);
       this.updateStatusBar("error");
     } finally {
       this.syncInProgress = false;
@@ -1289,7 +1293,7 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
   abortSync() {
     if (this.currentEngine) {
       this.currentEngine.abort();
-      new import_obsidian4.Notice("YaDisk: \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u043F\u0440\u0435\u0440\u0432\u0430\u043D\u0430");
+      new import_obsidian5.Notice("YaDisk: sync aborted");
       this.updateStatusBar("idle");
     }
   }
@@ -1298,17 +1302,17 @@ var YaDiskSyncPlugin = class extends import_obsidian4.Plugin {
       return;
     switch (status) {
       case "idle":
-        this.statusBarEl.setText("YaDisk: OK");
+        this.statusBarEl.setText("YaDisk: ok");
         break;
       case "syncing":
         if (current !== void 0 && total !== void 0 && total > 0) {
           this.statusBarEl.setText(`YaDisk: ${current}/${total}`);
         } else {
-          this.statusBarEl.setText("YaDisk: ...");
+          this.statusBarEl.setText("YaDisk: scanning...");
         }
         break;
       case "error":
-        this.statusBarEl.setText("YaDisk: !");
+        this.statusBarEl.setText("YaDisk: error");
         break;
     }
   }

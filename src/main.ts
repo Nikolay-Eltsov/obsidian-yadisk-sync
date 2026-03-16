@@ -32,7 +32,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 			this.settings.accessToken = accessToken;
 			this.settings.refreshToken = refreshToken;
 			this.settings.tokenExpiresAt = expiresAt;
-			this.saveSettings();
+			void this.saveSettings();
 		});
 
 		this.stateManager = new SyncStateManager(this.app);
@@ -45,30 +45,30 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.addSettingTab(new YaDiskSyncSettingTab(this.app, this));
 
 		this.addRibbonIcon("refresh-cw", "Yandex Disk Sync", () => {
-			this.runSync();
+			void this.runSync();
 		});
 
 		this.addCommand({
 			id: "sync-now",
-			name: "Синхронизировать сейчас",
-			callback: () => this.runSync(),
+			name: "Sync now",
+			callback: () => void this.runSync(),
 		});
 
 		this.addCommand({
 			id: "push-all",
-			name: "Загрузить всё на Яндекс Диск (Push)",
-			callback: () => this.runSync(SyncDirection.Push),
+			name: "Push all to Yandex Disk",
+			callback: () => void this.runSync(SyncDirection.Push),
 		});
 
 		this.addCommand({
 			id: "pull-all",
-			name: "Скачать всё с Яндекс Диска (Pull)",
-			callback: () => this.runSync(SyncDirection.Pull),
+			name: "Pull all from Yandex Disk",
+			callback: () => void this.runSync(SyncDirection.Pull),
 		});
 
 		this.addCommand({
 			id: "abort-sync",
-			name: "Прервать синхронизацию",
+			name: "Abort sync",
 			callback: () => this.abortSync(),
 		});
 
@@ -83,7 +83,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
 
 		if (this.settings.syncOnStartup && this.settings.accessToken) {
-			setTimeout(() => this.runSync(), 3000);
+			setTimeout(() => void this.runSync(), 3000);
 		}
 	}
 
@@ -105,7 +105,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		}
 		this.debouncedSyncTimer = setTimeout(() => {
 			this.debouncedSyncTimer = null;
-			this.runSync();
+			void this.runSync();
 		}, DEBOUNCE_DELAY);
 	}
 
@@ -136,7 +136,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
 			const ms = this.settings.autoSyncInterval * 60 * 1000;
 			this.autoSyncIntervalId = this.registerInterval(
-				window.setInterval(() => this.runSync(), ms),
+				window.setInterval(() => void this.runSync(), ms),
 			);
 		}
 	}
@@ -145,7 +145,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (this.syncInProgress) return;
 
 		if (!this.settings.accessToken) {
-			new Notice("YaDisk: авторизуйтесь в настройках плагина");
+			new Notice("YaDisk: authorize in plugin settings");
 			return;
 		}
 
@@ -164,12 +164,12 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 			if (stats.errors > 0) {
 				new Notice(
-					`YaDisk: ↑${stats.uploaded} ↓${stats.downloaded} ✕${stats.deleted} ⚠${stats.errors}`,
+					`YaDisk: done with errors. up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted} err:${stats.errors}`,
 				);
 				this.updateStatusBar("error");
 			} else if (stats.uploaded + stats.downloaded + stats.deleted > 0) {
 				new Notice(
-					`YaDisk: ↑${stats.uploaded} ↓${stats.downloaded} ✕${stats.deleted}`,
+					`YaDisk: up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`,
 				);
 				this.updateStatusBar("idle");
 			} else {
@@ -188,7 +188,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private abortSync(): void {
 		if (this.currentEngine) {
 			this.currentEngine.abort();
-			new Notice("YaDisk: синхронизация прервана");
+			new Notice("YaDisk: sync aborted");
 			this.updateStatusBar("idle");
 		}
 	}
@@ -202,17 +202,17 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		switch (status) {
 			case "idle":
-				this.statusBarEl.setText("YaDisk: OK");
+				this.statusBarEl.setText("YaDisk: ok");
 				break;
 			case "syncing":
 				if (current !== undefined && total !== undefined && total > 0) {
 					this.statusBarEl.setText(`YaDisk: ${current}/${total}`);
 				} else {
-					this.statusBarEl.setText("YaDisk: ...");
+					this.statusBarEl.setText("YaDisk: scanning...");
 				}
 				break;
 			case "error":
-				this.statusBarEl.setText("YaDisk: !");
+				this.statusBarEl.setText("YaDisk: error");
 				break;
 		}
 	}

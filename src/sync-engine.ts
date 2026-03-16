@@ -1,8 +1,7 @@
-import { App, Notice, normalizePath as obsNormalize } from "obsidian";
+import { App, TFile } from "obsidian";
 import {
 	YaDiskSyncSettings,
 	FileRecord,
-	SyncState,
 	SyncPlanItem,
 	SyncAction,
 	SyncDirection,
@@ -12,7 +11,7 @@ import {
 import { YandexDiskClient } from "./yandex-client";
 import { SyncStateManager } from "./sync-state";
 import { ConflictModal } from "./conflict-modal";
-import { sortByDepthAsc, sortByDepthDesc, normalizePath } from "./utils";
+import { sortByDepthAsc, sortByDepthDesc } from "./utils";
 
 export type SyncProgressCallback = (current: number, total: number) => void;
 
@@ -72,17 +71,6 @@ export class SyncEngine {
 		const total = actionItems.length;
 		let current = 0;
 
-		// Folders first (create by depth ascending)
-		const uploadNewDirs = new Set<string>();
-		for (const item of actionItems) {
-			if (item.action === SyncAction.UploadNew || item.action === SyncAction.UploadModified) {
-				const parts = item.path.split("/");
-				for (let i = 1; i < parts.length; i++) {
-					uploadNewDirs.add(parts.slice(0, i).join("/"));
-				}
-			}
-		}
-
 		// Sort actions: creates first (asc depth), then updates, then deletes (desc depth)
 		const creates = actionItems.filter(
 			(i) => i.action === SyncAction.UploadNew || i.action === SyncAction.DownloadNew,
@@ -141,7 +129,6 @@ export class SyncEngine {
 
 		// Save new state
 		if (!this.aborted) {
-			// Rebuild snapshots after execution to capture actual state
 			const newLocalSnapshot = await this.stateManager.buildLocalSnapshot(
 				this.settings,
 				localSnapshot,
@@ -219,26 +206,22 @@ export class SyncEngine {
 		const localSame = localExists && localExisted && lCur.md5 === lPrev.md5;
 		const remoteSame = remoteExists && remoteExisted && rCur.md5 === rPrev.md5;
 
-		// Both exist and are identical
 		if (localExists && remoteExists && lCur.md5 === rCur.md5) {
 			return SyncAction.Skip;
 		}
 
-		// Push-only mode
 		if (direction === SyncDirection.Push) {
 			if (localNew || localChanged) return SyncAction.UploadNew;
 			if (localDeleted && remoteExists) return SyncAction.DeleteRemote;
 			return SyncAction.Skip;
 		}
 
-		// Pull-only mode
 		if (direction === SyncDirection.Pull) {
 			if (remoteNew || remoteChanged) return SyncAction.DownloadNew;
 			if (remoteDeleted && localExists) return SyncAction.DeleteLocal;
 			return SyncAction.Skip;
 		}
 
-		// Bidirectional — first sync (no previous state)
 		if (!localExisted && !remoteExisted) {
 			if (localExists && remoteExists) {
 				return lCur.md5 === rCur.md5 ? SyncAction.Skip : SyncAction.Conflict;
@@ -248,38 +231,27 @@ export class SyncEngine {
 			return SyncAction.Skip;
 		}
 
-		// new local, no remote change
 		if (localNew && !remoteExists) return SyncAction.UploadNew;
 		if (localNew && remoteSame) return SyncAction.UploadNew;
 		if (localNew && remoteNew) return SyncAction.Conflict;
 		if (localNew && remoteChanged) return SyncAction.Conflict;
 
-		// new remote, no local change
 		if (remoteNew && !localExists) return SyncAction.DownloadNew;
 		if (remoteNew && localSame) return SyncAction.DownloadNew;
 
-		// changed local, remote same or absent
 		if (localChanged && (remoteSame || !remoteExists)) return SyncAction.UploadModified;
-		// changed remote, local same or absent
 		if (remoteChanged && (localSame || !localExists)) return SyncAction.DownloadModified;
 
-		// both changed
 		if (localChanged && remoteChanged) return SyncAction.Conflict;
 
-		// deleted local, remote same
 		if (localDeleted && remoteSame) return SyncAction.DeleteRemote;
-		// deleted remote, local same
 		if (remoteDeleted && localSame) return SyncAction.DeleteLocal;
 
-		// deleted local, remote changed — conflict (prefer keep)
 		if (localDeleted && remoteChanged) return SyncAction.Conflict;
-		// deleted remote, local changed — conflict (prefer keep)
 		if (remoteDeleted && localChanged) return SyncAction.Conflict;
 
-		// both deleted
 		if (localDeleted && remoteDeleted) return SyncAction.Skip;
 
-		// same on both sides
 		if (localSame && remoteSame) return SyncAction.Skip;
 
 		return SyncAction.Skip;
@@ -369,9 +341,9 @@ export class SyncEngine {
 
 	private async executeUpload(item: SyncPlanItem): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(item.path);
-		if (!file) throw new Error(`Local file not found: ${item.path}`);
+		if (!file || !(file instanceof TFile)) throw new Error(`Local file not found: ${item.path}`);
 
-		const data = await this.app.vault.readBinary(file as any);
+		const data = await this.app.vault.readBinary(file);
 		const remotePath = this.client.toRemotePath(item.path);
 		await this.client.uploadFile(remotePath, data);
 	}
@@ -381,10 +353,9 @@ export class SyncEngine {
 		const data = await this.client.downloadFile(remotePath);
 
 		const existingFile = this.app.vault.getAbstractFileByPath(item.path);
-		if (existingFile) {
-			await this.app.vault.modifyBinary(existingFile as any, data);
+		if (existingFile && existingFile instanceof TFile) {
+			await this.app.vault.modifyBinary(existingFile, data);
 		} else {
-			// Ensure parent folder exists locally
 			const parentPath = item.path.substring(0, item.path.lastIndexOf("/"));
 			if (parentPath) {
 				await this.ensureLocalFolder(parentPath);
@@ -401,7 +372,7 @@ export class SyncEngine {
 	private async executeDeleteLocal(item: SyncPlanItem): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(item.path);
 		if (file) {
-			await this.app.vault.delete(file);
+			await this.app.fileManager.trashFile(file);
 		}
 	}
 

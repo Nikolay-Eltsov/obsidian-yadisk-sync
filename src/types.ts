@@ -51,8 +51,6 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	conflictStrategy: ConflictStrategy.NewerWins,
 	autoSyncInterval: 0,
 	excludePatterns: [
-		".obsidian/workspace*.json",
-		".obsidian/plugins/*/data.json",
 		".trash/**",
 	],
 	maxFileSizeMB: 50,
