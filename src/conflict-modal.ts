@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, Modal, Setting } from "obsidian";
 import { SyncPlanItem, ConflictResolution } from "./types";
 
 export class ConflictModal extends Modal {
@@ -19,7 +19,9 @@ export class ConflictModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass("yadisk-conflict-modal");
 
-		contentEl.createEl("h2", { text: `Конфликты синхронизации (${this.conflicts.length})` });
+		new Setting(contentEl)
+			.setName(`Sync conflicts (${this.conflicts.length})`)
+			.setHeading();
 
 		const listEl = contentEl.createDiv({ cls: "conflict-list" });
 
@@ -31,36 +33,36 @@ export class ConflictModal extends Modal {
 			const details = item.createDiv({ cls: "conflict-details" });
 
 			const localCol = details.createDiv({ cls: "detail-col" });
-			localCol.createDiv({ cls: "detail-label", text: "Локальный" });
+			localCol.createDiv({ cls: "detail-label", text: "Local" });
 			if (conflict.localRecord) {
 				localCol.createEl("div", {
-					text: `Размер: ${formatSize(conflict.localRecord.size)}`,
+					text: `Size: ${formatSize(conflict.localRecord.size)}`,
 				});
 				localCol.createEl("div", {
-					text: `Изменён: ${formatDate(conflict.localRecord.mtime)}`,
+					text: `Modified: ${formatDate(conflict.localRecord.mtime)}`,
 				});
 			} else {
-				localCol.createEl("div", { text: "Удалён" });
+				localCol.createEl("div", { text: "Deleted" });
 			}
 
 			const remoteCol = details.createDiv({ cls: "detail-col" });
-			remoteCol.createDiv({ cls: "detail-label", text: "Удалённый" });
+			remoteCol.createDiv({ cls: "detail-label", text: "Remote" });
 			if (conflict.remoteRecord) {
 				remoteCol.createEl("div", {
-					text: `Размер: ${formatSize(conflict.remoteRecord.size)}`,
+					text: `Size: ${formatSize(conflict.remoteRecord.size)}`,
 				});
 				remoteCol.createEl("div", {
-					text: `Изменён: ${formatDate(conflict.remoteRecord.mtime)}`,
+					text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}`,
 				});
 			} else {
-				remoteCol.createEl("div", { text: "Удалён" });
+				remoteCol.createEl("div", { text: "Deleted" });
 			}
 
 			const choiceEl = item.createDiv({ cls: "conflict-choice" });
 			const choices: { label: string; value: "local" | "remote" | "skip" }[] = [
-				{ label: "Локальный", value: "local" },
-				{ label: "Удалённый", value: "remote" },
-				{ label: "Пропустить", value: "skip" },
+				{ label: "Local", value: "local" },
+				{ label: "Remote", value: "remote" },
+				{ label: "Skip", value: "skip" },
 			];
 
 			const buttons: HTMLButtonElement[] = [];
@@ -83,14 +85,14 @@ export class ConflictModal extends Modal {
 		const footer = contentEl.createDiv({ cls: "modal-button-container" });
 
 		const applyBtn = footer.createEl("button", {
-			text: "Применить",
+			text: "Apply",
 			cls: "mod-cta",
 		});
 		applyBtn.addEventListener("click", () => {
 			this.submitAndClose();
 		});
 
-		const cancelBtn = footer.createEl("button", { text: "Отмена" });
+		const cancelBtn = footer.createEl("button", { text: "Cancel" });
 		cancelBtn.addEventListener("click", () => {
 			this.resolutions.forEach((_, key) => this.resolutions.set(key, "skip"));
 			this.submitAndClose();
@@ -128,9 +130,9 @@ export class ConflictModal extends Modal {
 }
 
 function formatSize(bytes: number): string {
-	if (bytes < 1024) return bytes + " Б";
-	if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " КБ";
-	return (bytes / (1024 * 1024)).toFixed(1) + " МБ";
+	if (bytes < 1024) return bytes + " B";
+	if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+	return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 
 function formatDate(ms: number): string {

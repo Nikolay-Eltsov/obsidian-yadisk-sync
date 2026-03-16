@@ -373,41 +373,41 @@ var ConflictModal = class extends import_obsidian2.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass("yadisk-conflict-modal");
-    contentEl.createEl("h2", { text: `\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442\u044B \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 (${this.conflicts.length})` });
+    new import_obsidian2.Setting(contentEl).setName(`Sync conflicts (${this.conflicts.length})`).setHeading();
     const listEl = contentEl.createDiv({ cls: "conflict-list" });
     for (const conflict of this.conflicts) {
       const item = listEl.createDiv({ cls: "yadisk-conflict-item" });
       item.createDiv({ cls: "conflict-path", text: conflict.path });
       const details = item.createDiv({ cls: "conflict-details" });
       const localCol = details.createDiv({ cls: "detail-col" });
-      localCol.createDiv({ cls: "detail-label", text: "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439" });
+      localCol.createDiv({ cls: "detail-label", text: "Local" });
       if (conflict.localRecord) {
         localCol.createEl("div", {
-          text: `\u0420\u0430\u0437\u043C\u0435\u0440: ${formatSize(conflict.localRecord.size)}`
+          text: `Size: ${formatSize(conflict.localRecord.size)}`
         });
         localCol.createEl("div", {
-          text: `\u0418\u0437\u043C\u0435\u043D\u0451\u043D: ${formatDate(conflict.localRecord.mtime)}`
+          text: `Modified: ${formatDate(conflict.localRecord.mtime)}`
         });
       } else {
-        localCol.createEl("div", { text: "\u0423\u0434\u0430\u043B\u0451\u043D" });
+        localCol.createEl("div", { text: "Deleted" });
       }
       const remoteCol = details.createDiv({ cls: "detail-col" });
-      remoteCol.createDiv({ cls: "detail-label", text: "\u0423\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0439" });
+      remoteCol.createDiv({ cls: "detail-label", text: "Remote" });
       if (conflict.remoteRecord) {
         remoteCol.createEl("div", {
-          text: `\u0420\u0430\u0437\u043C\u0435\u0440: ${formatSize(conflict.remoteRecord.size)}`
+          text: `Size: ${formatSize(conflict.remoteRecord.size)}`
         });
         remoteCol.createEl("div", {
-          text: `\u0418\u0437\u043C\u0435\u043D\u0451\u043D: ${formatDate(conflict.remoteRecord.mtime)}`
+          text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}`
         });
       } else {
-        remoteCol.createEl("div", { text: "\u0423\u0434\u0430\u043B\u0451\u043D" });
+        remoteCol.createEl("div", { text: "Deleted" });
       }
       const choiceEl = item.createDiv({ cls: "conflict-choice" });
       const choices = [
-        { label: "\u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439", value: "local" },
-        { label: "\u0423\u0434\u0430\u043B\u0451\u043D\u043D\u044B\u0439", value: "remote" },
-        { label: "\u041F\u0440\u043E\u043F\u0443\u0441\u0442\u0438\u0442\u044C", value: "skip" }
+        { label: "Local", value: "local" },
+        { label: "Remote", value: "remote" },
+        { label: "Skip", value: "skip" }
       ];
       const buttons = [];
       for (const choice of choices) {
@@ -425,13 +425,13 @@ var ConflictModal = class extends import_obsidian2.Modal {
     }
     const footer = contentEl.createDiv({ cls: "modal-button-container" });
     const applyBtn = footer.createEl("button", {
-      text: "\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C",
+      text: "Apply",
       cls: "mod-cta"
     });
     applyBtn.addEventListener("click", () => {
       this.submitAndClose();
     });
-    const cancelBtn = footer.createEl("button", { text: "\u041E\u0442\u043C\u0435\u043D\u0430" });
+    const cancelBtn = footer.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => {
       this.resolutions.forEach((_, key) => this.resolutions.set(key, "skip"));
       this.submitAndClose();
@@ -466,10 +466,10 @@ var ConflictModal = class extends import_obsidian2.Modal {
 };
 function formatSize(bytes) {
   if (bytes < 1024)
-    return bytes + " \u0411";
+    return bytes + " B";
   if (bytes < 1024 * 1024)
-    return (bytes / 1024).toFixed(1) + " \u041A\u0411";
-  return (bytes / (1024 * 1024)).toFixed(1) + " \u041C\u0411";
+    return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
 }
 function formatDate(ms) {
   if (!ms)
