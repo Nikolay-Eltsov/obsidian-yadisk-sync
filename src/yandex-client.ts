@@ -62,7 +62,7 @@ export class YandexDiskClient {
 		});
 
 		if (resp.status !== 200) {
-			const err = resp.json;
+			const err = resp.json as { error_description?: string; error?: string } | undefined;
 			throw new Error(err?.error_description || err?.error || `OAuth error: ${resp.status}`);
 		}
 
@@ -99,7 +99,7 @@ export class YandexDiskClient {
 		});
 
 		if (resp.status !== 200) {
-			const err = resp.json;
+			const err = resp.json as { error_description?: string; error?: string } | undefined;
 			throw new Error(err?.error_description || err?.error || `Token refresh error: ${resp.status}`);
 		}
 

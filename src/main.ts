@@ -37,7 +37,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.stateManager = new SyncStateManager(this.app);
 
-		const data = await this.loadData();
+		const data = (await this.loadData()) as { syncState?: import("./types").SyncState; settings?: Partial<import("./types").YaDiskSyncSettings> } | null;
 		if (data) {
 			this.stateManager.loadFromData(data);
 		}
@@ -110,7 +110,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = await this.loadData();
+		const data = (await this.loadData()) as { settings?: Partial<YaDiskSyncSettings> } | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings || {});
 	}
 

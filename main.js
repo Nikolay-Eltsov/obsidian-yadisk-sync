@@ -1129,7 +1129,9 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         this.plugin.stateManager.resetState();
         void this.plugin.saveSettings();
         btn.setButtonText("Done!");
-        setTimeout(() => btn.setButtonText("Reset"), 2e3);
+        setTimeout(() => {
+          btn.setButtonText("Reset");
+        }, 2e3);
       })
     );
   }
