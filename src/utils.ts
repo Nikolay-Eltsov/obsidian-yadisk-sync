@@ -26,10 +26,10 @@ export function debounce<T extends (...args: unknown[]) => void>(
 	fn: T,
 	ms: number,
 ): (...args: Parameters<T>) => void {
-	let timer: ReturnType<typeof setTimeout> | null = null;
+	let timer: number | null = null;
 	return (...args: Parameters<T>) => {
-		if (timer) clearTimeout(timer);
-		timer = setTimeout(() => fn(...args), ms);
+		if (timer) activeWindow.clearTimeout(timer);
+		timer = activeWindow.setTimeout(() => fn(...args), ms);
 	};
 }
 

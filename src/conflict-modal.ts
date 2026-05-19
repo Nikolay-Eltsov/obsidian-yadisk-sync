@@ -35,27 +35,19 @@ export class ConflictModal extends Modal {
 			const localCol = details.createDiv({ cls: "detail-col" });
 			localCol.createDiv({ cls: "detail-label", text: "Local" });
 			if (conflict.localRecord) {
-				localCol.createEl("div", {
-					text: `Size: ${formatSize(conflict.localRecord.size)}`,
-				});
-				localCol.createEl("div", {
-					text: `Modified: ${formatDate(conflict.localRecord.mtime)}`,
-				});
+				localCol.createDiv({ text: `Size: ${formatSize(conflict.localRecord.size)}` });
+				localCol.createDiv({ text: `Modified: ${formatDate(conflict.localRecord.mtime)}` });
 			} else {
-				localCol.createEl("div", { text: "Deleted" });
+				localCol.createDiv({ text: "Deleted" });
 			}
 
 			const remoteCol = details.createDiv({ cls: "detail-col" });
 			remoteCol.createDiv({ cls: "detail-label", text: "Remote" });
 			if (conflict.remoteRecord) {
-				remoteCol.createEl("div", {
-					text: `Size: ${formatSize(conflict.remoteRecord.size)}`,
-				});
-				remoteCol.createEl("div", {
-					text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}`,
-				});
+				remoteCol.createDiv({ text: `Size: ${formatSize(conflict.remoteRecord.size)}` });
+				remoteCol.createDiv({ text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}` });
 			} else {
-				remoteCol.createEl("div", { text: "Deleted" });
+				remoteCol.createDiv({ text: "Deleted" });
 			}
 
 			const choiceEl = item.createDiv({ cls: "conflict-choice" });

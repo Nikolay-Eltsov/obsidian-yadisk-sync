@@ -16,7 +16,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private autoSyncIntervalId: number | null = null;
 	private syncInProgress = false;
 	private currentEngine: SyncEngine | null = null;
-	private debouncedSyncTimer: ReturnType<typeof setTimeout> | null = null;
+	private debouncedSyncTimer: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -37,7 +37,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.stateManager = new SyncStateManager(this.app);
 
-		const data = (await this.loadData()) as { syncState?: import("./types").SyncState; settings?: Partial<import("./types").YaDiskSyncSettings> } | null;
+		const data = (await this.loadData() as unknown) as { syncState?: import("./types").SyncState; settings?: Partial<import("./types").YaDiskSyncSettings> } | null;
 		if (data) {
 			this.stateManager.loadFromData(data);
 		}
@@ -83,7 +83,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
 
 		if (this.settings.syncOnStartup && this.settings.accessToken) {
-			setTimeout(() => void this.runSync(), 3000);
+			activeWindow.setTimeout(() => { void this.runSync(); }, 3000);
 		}
 	}
 
@@ -92,7 +92,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 			window.clearInterval(this.autoSyncIntervalId);
 		}
 		if (this.debouncedSyncTimer !== null) {
-			clearTimeout(this.debouncedSyncTimer);
+			activeWindow.clearTimeout(this.debouncedSyncTimer);
 		}
 	}
 
@@ -101,17 +101,17 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (matchesExcludePattern(file.path, this.settings.excludePatterns)) return;
 
 		if (this.debouncedSyncTimer !== null) {
-			clearTimeout(this.debouncedSyncTimer);
+			activeWindow.clearTimeout(this.debouncedSyncTimer);
 		}
-		this.debouncedSyncTimer = setTimeout(() => {
+		this.debouncedSyncTimer = activeWindow.setTimeout(() => {
 			this.debouncedSyncTimer = null;
 			void this.runSync();
 		}, DEBOUNCE_DELAY);
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = (await this.loadData()) as { settings?: Partial<YaDiskSyncSettings> } | null;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings || {});
+		const data = (await this.loadData() as unknown) as { settings?: Partial<YaDiskSyncSettings> } | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings ?? {});
 	}
 
 	async saveSettings(): Promise<void> {
@@ -136,7 +136,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
 			const ms = this.settings.autoSyncInterval * 60 * 1000;
 			this.autoSyncIntervalId = this.registerInterval(
-				window.setInterval(() => void this.runSync(), ms),
+				window.setInterval(() => { void this.runSync(); }, ms),
 			);
 		}
 	}

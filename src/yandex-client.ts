@@ -62,11 +62,11 @@ export class YandexDiskClient {
 		});
 
 		if (resp.status !== 200) {
-			const err = resp.json as { error_description?: string; error?: string } | undefined;
+			const err = (resp.json as unknown) as { error_description?: string; error?: string } | undefined;
 			throw new Error(err?.error_description || err?.error || `OAuth error: ${resp.status}`);
 		}
 
-		const data = resp.json as YaDiskTokenResponse;
+		const data = (resp.json as unknown) as YaDiskTokenResponse;
 		this.token = data.access_token;
 		this.refreshTokenValue = data.refresh_token;
 		this.tokenExpiresAt = Date.now() + data.expires_in * 1000;
@@ -99,11 +99,11 @@ export class YandexDiskClient {
 		});
 
 		if (resp.status !== 200) {
-			const err = resp.json as { error_description?: string; error?: string } | undefined;
+			const err = (resp.json as unknown) as { error_description?: string; error?: string } | undefined;
 			throw new Error(err?.error_description || err?.error || `Token refresh error: ${resp.status}`);
 		}
 
-		const data = resp.json as YaDiskTokenResponse;
+		const data = (resp.json as unknown) as YaDiskTokenResponse;
 		this.token = data.access_token;
 		this.refreshTokenValue = data.refresh_token;
 		this.tokenExpiresAt = Date.now() + data.expires_in * 1000;
@@ -184,7 +184,7 @@ export class YandexDiskClient {
 
 	async getDiskInfo(): Promise<YaDiskDiskInfo> {
 		const resp = await this.request({ url: API_BASE });
-		return resp.json as YaDiskDiskInfo;
+		return (resp.json as unknown) as YaDiskDiskInfo;
 	}
 
 	async getResource(path: string, limit = 0, offset = 0): Promise<YaDiskResource> {
@@ -195,7 +195,7 @@ export class YandexDiskClient {
 		const resp = await this.request({
 			url: `${API_BASE}/resources?${params.toString()}`,
 		});
-		return resp.json as YaDiskResource;
+		return (resp.json as unknown) as YaDiskResource;
 	}
 
 	async listAllRecursive(folderPath: string): Promise<FileRecord[]> {
@@ -277,7 +277,7 @@ export class YandexDiskClient {
 		const linkResp = await this.request({
 			url: `${API_BASE}/resources/upload?${params.toString()}`,
 		});
-		const link = linkResp.json as YaDiskLink;
+		const link = (linkResp.json as unknown) as YaDiskLink;
 
 		await requestUrl({
 			url: link.href,
@@ -293,7 +293,7 @@ export class YandexDiskClient {
 		const linkResp = await this.request({
 			url: `${API_BASE}/resources/download?${params.toString()}`,
 		});
-		const link = linkResp.json as YaDiskLink;
+		const link = (linkResp.json as unknown) as YaDiskLink;
 
 		const resp = await requestUrl({
 			url: link.href,
@@ -316,5 +316,5 @@ export class YandexDiskClient {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => activeWindow.setTimeout(resolve, ms));
 }

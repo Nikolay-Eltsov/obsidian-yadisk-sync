@@ -50,7 +50,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 					}
 					try {
 						btn.setButtonText("...");
-						btn.setDisabled(true);
+						btn.buttonEl.disabled = true;
 						await this.plugin.client.exchangeCode(codeValue);
 						new Notice("Authorization successful");
 						await this.plugin.saveSettings();
@@ -58,7 +58,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 					} catch (e) {
 						new Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
 						btn.setButtonText("Confirm");
-						btn.setDisabled(false);
+						btn.buttonEl.disabled = false;
 					}
 				}),
 			);
@@ -206,7 +206,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 						this.plugin.stateManager.resetState();
 						void this.plugin.saveSettings();
 						btn.setButtonText("Done!");
-						setTimeout(() => { btn.setButtonText("Reset"); }, 2000);
+						activeWindow.setTimeout(() => { btn.setButtonText("Reset"); }, 2000);
 					}),
 			);
 	}

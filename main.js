@@ -352,7 +352,7 @@ var YandexDiskClient = class {
   }
 };
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => activeWindow.setTimeout(resolve, ms));
 }
 
 // src/sync-engine.ts
@@ -382,26 +382,18 @@ var ConflictModal = class extends import_obsidian2.Modal {
       const localCol = details.createDiv({ cls: "detail-col" });
       localCol.createDiv({ cls: "detail-label", text: "Local" });
       if (conflict.localRecord) {
-        localCol.createEl("div", {
-          text: `Size: ${formatSize(conflict.localRecord.size)}`
-        });
-        localCol.createEl("div", {
-          text: `Modified: ${formatDate(conflict.localRecord.mtime)}`
-        });
+        localCol.createDiv({ text: `Size: ${formatSize(conflict.localRecord.size)}` });
+        localCol.createDiv({ text: `Modified: ${formatDate(conflict.localRecord.mtime)}` });
       } else {
-        localCol.createEl("div", { text: "Deleted" });
+        localCol.createDiv({ text: "Deleted" });
       }
       const remoteCol = details.createDiv({ cls: "detail-col" });
       remoteCol.createDiv({ cls: "detail-label", text: "Remote" });
       if (conflict.remoteRecord) {
-        remoteCol.createEl("div", {
-          text: `Size: ${formatSize(conflict.remoteRecord.size)}`
-        });
-        remoteCol.createEl("div", {
-          text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}`
-        });
+        remoteCol.createDiv({ text: `Size: ${formatSize(conflict.remoteRecord.size)}` });
+        remoteCol.createDiv({ text: `Modified: ${formatDate(conflict.remoteRecord.mtime)}` });
       } else {
-        remoteCol.createEl("div", { text: "Deleted" });
+        remoteCol.createDiv({ text: "Deleted" });
       }
       const choiceEl = item.createDiv({ cls: "conflict-choice" });
       const choices = [
@@ -779,7 +771,7 @@ var SyncEngine = class {
       current = current ? current + "/" + part : part;
       const existing = this.app.vault.getAbstractFileByPath(current);
       if (!existing) {
-        await this.app.vault.createFolder(current);
+        await this.app.vault.adapter.mkdir(current);
       }
     }
   }
@@ -1037,7 +1029,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
           }
           try {
             btn.setButtonText("...");
-            btn.setDisabled(true);
+            btn.buttonEl.disabled = true;
             await this.plugin.client.exchangeCode(codeValue);
             new import_obsidian4.Notice("Authorization successful");
             await this.plugin.saveSettings();
@@ -1045,7 +1037,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
           } catch (e) {
             new import_obsidian4.Notice(`Error: ${e instanceof Error ? e.message : String(e)}`);
             btn.setButtonText("Confirm");
-            btn.setDisabled(false);
+            btn.buttonEl.disabled = false;
           }
         })
       );
@@ -1129,7 +1121,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         this.plugin.stateManager.resetState();
         void this.plugin.saveSettings();
         btn.setButtonText("Done!");
-        setTimeout(() => {
+        activeWindow.setTimeout(() => {
           btn.setButtonText("Reset");
         }, 2e3);
       })
@@ -1202,7 +1194,9 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
     if (this.settings.syncOnStartup && this.settings.accessToken) {
-      setTimeout(() => void this.runSync(), 3e3);
+      activeWindow.setTimeout(() => {
+        void this.runSync();
+      }, 3e3);
     }
   }
   onunload() {
@@ -1210,7 +1204,7 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
       window.clearInterval(this.autoSyncIntervalId);
     }
     if (this.debouncedSyncTimer !== null) {
-      clearTimeout(this.debouncedSyncTimer);
+      activeWindow.clearTimeout(this.debouncedSyncTimer);
     }
   }
   onFileChange(file) {
@@ -1219,16 +1213,17 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
     if (matchesExcludePattern(file.path, this.settings.excludePatterns))
       return;
     if (this.debouncedSyncTimer !== null) {
-      clearTimeout(this.debouncedSyncTimer);
+      activeWindow.clearTimeout(this.debouncedSyncTimer);
     }
-    this.debouncedSyncTimer = setTimeout(() => {
+    this.debouncedSyncTimer = activeWindow.setTimeout(() => {
       this.debouncedSyncTimer = null;
       void this.runSync();
     }, DEBOUNCE_DELAY);
   }
   async loadSettings() {
+    var _a2;
     const data = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, (data == null ? void 0 : data.settings) || {});
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, (_a2 = data == null ? void 0 : data.settings) != null ? _a2 : {});
   }
   async saveSettings() {
     const stateData = this.stateManager ? this.stateManager.getDataToSave() : {};
@@ -1250,7 +1245,9 @@ var YaDiskSyncPlugin = class extends import_obsidian5.Plugin {
     if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
       const ms = this.settings.autoSyncInterval * 60 * 1e3;
       this.autoSyncIntervalId = this.registerInterval(
-        window.setInterval(() => void this.runSync(), ms)
+        window.setInterval(() => {
+          void this.runSync();
+        }, ms)
       );
     }
   }
