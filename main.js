@@ -188,11 +188,12 @@ var YandexDiskClient = class {
   }
   toLocalPath(remotePath) {
     const remote = normalizePath(this.remotePath);
+    const path = remotePath.startsWith("disk:") ? remotePath.slice(5) : remotePath;
     const prefix = remote + "/";
-    if (remotePath.startsWith(prefix)) {
-      return remotePath.slice(prefix.length);
+    if (path.startsWith(prefix)) {
+      return path.slice(prefix.length);
     }
-    return remotePath;
+    return path;
   }
   async request(params, retries = MAX_RETRIES) {
     await this.ensureValidToken();
