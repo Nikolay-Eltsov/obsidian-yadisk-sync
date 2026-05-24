@@ -644,6 +644,10 @@ var SyncEngine = class {
         return "download_new" /* DownloadNew */;
       return "skip" /* Skip */;
     }
+    if (remoteExists && !localExists && !localExisted)
+      return "download_new" /* DownloadNew */;
+    if (localExists && !remoteExists && !remoteExisted)
+      return "upload_new" /* UploadNew */;
     if (localNew && !remoteExists)
       return "upload_new" /* UploadNew */;
     if (localNew && remoteSame)

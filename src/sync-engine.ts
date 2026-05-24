@@ -231,6 +231,10 @@ export class SyncEngine {
 			return SyncAction.Skip;
 		}
 
+		// File exists on one side but was never tracked on the other (e.g. prior download/upload failed)
+		if (remoteExists && !localExists && !localExisted) return SyncAction.DownloadNew;
+		if (localExists && !remoteExists && !remoteExisted) return SyncAction.UploadNew;
+
 		if (localNew && !remoteExists) return SyncAction.UploadNew;
 		if (localNew && remoteSame) return SyncAction.UploadNew;
 		if (localNew && remoteNew) return SyncAction.Conflict;
