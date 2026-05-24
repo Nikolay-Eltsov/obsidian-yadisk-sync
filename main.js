@@ -771,7 +771,7 @@ var SyncEngine = class {
       current = current ? current + "/" + part : part;
       const existing = this.app.vault.getAbstractFileByPath(current);
       if (!existing) {
-        await this.app.vault.adapter.mkdir(current);
+        await this.app.vault.createFolder(current);
       }
     }
   }
