@@ -835,24 +835,25 @@ var SyncEngine = class {
       hooks.onPlanReady(total);
     if (total === 0)
       return;
-    const creates = actionItems.filter(
-      (i) => i.action === "upload_new" /* UploadNew */ || i.action === "download_new" /* DownloadNew */
+    const uploads = actionItems.filter(
+      (i) => i.action === "upload_new" /* UploadNew */ || i.action === "upload_modified" /* UploadModified */
     );
-    const updates = actionItems.filter(
-      (i) => i.action === "upload_modified" /* UploadModified */ || i.action === "download_modified" /* DownloadModified */
+    const downloads = actionItems.filter(
+      (i) => i.action === "download_new" /* DownloadNew */ || i.action === "download_modified" /* DownloadModified */
     );
     const deletes = actionItems.filter(
       (i) => i.action === "delete_local" /* DeleteLocal */ || i.action === "delete_remote" /* DeleteRemote */
     );
-    creates.sort(byDepthAsc);
+    uploads.sort(byDepthAsc);
+    downloads.sort(byDepthAsc);
     deletes.sort(byDepthDesc);
-    let current = 0;
     const reporter = hooks.reporter;
     const runPhase = async (label, items) => {
       if (items.length === 0 || this.aborted)
         return;
       if (reporter)
         reporter.phase(label);
+      let done = 0;
       await runPool(
         items,
         this.settings.concurrency,
@@ -863,16 +864,16 @@ var SyncEngine = class {
             console.error(`[YaDisk Sync] Error processing ${item.path}:`, e);
             stats.errors++;
           }
-          current++;
+          done++;
           if (reporter)
-            reporter.tick(current, total);
+            reporter.tick(done, items.length);
           await this.maybeCheckpoint(localSnapshot, remoteSnapshot, hooks);
         },
         () => this.aborted
       );
     };
-    await runPhase("Transferring", creates);
-    await runPhase("Updating", updates);
+    await runPhase("Uploading", uploads);
+    await runPhase("Downloading", downloads);
     await runPhase("Deleting", deletes);
   }
   /**

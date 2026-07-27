@@ -192,11 +192,17 @@ export class SyncEngine {
 		if (hooks.onPlanReady) hooks.onPlanReady(total);
 		if (total === 0) return;
 
-		const creates = actionItems.filter(
-			(i) => i.action === SyncAction.UploadNew || i.action === SyncAction.DownloadNew,
+		// Uploads go first, and as their own phase.
+		//
+		// Mixed in with the downloads, a note just written on this device would
+		// sit behind however many thousand files the remote happens to be
+		// sending — hours, on a first sync. Work done here is the only work
+		// that exists nowhere else yet, so it is the work worth doing first.
+		const uploads = actionItems.filter(
+			(i) => i.action === SyncAction.UploadNew || i.action === SyncAction.UploadModified,
 		);
-		const updates = actionItems.filter(
-			(i) => i.action === SyncAction.UploadModified || i.action === SyncAction.DownloadModified,
+		const downloads = actionItems.filter(
+			(i) => i.action === SyncAction.DownloadNew || i.action === SyncAction.DownloadModified,
 		);
 		const deletes = actionItems.filter(
 			(i) => i.action === SyncAction.DeleteLocal || i.action === SyncAction.DeleteRemote,
@@ -204,15 +210,19 @@ export class SyncEngine {
 
 		// Sorting the items directly, rather than sorting paths and then looking
 		// each one up again, keeps this O(n log n) instead of O(n²).
-		creates.sort(byDepthAsc);
+		uploads.sort(byDepthAsc);
+		downloads.sort(byDepthAsc);
 		deletes.sort(byDepthDesc);
 
-		let current = 0;
 		const reporter = hooks.reporter;
 
 		const runPhase = async (label: string, items: SyncPlanItem[]) => {
 			if (items.length === 0 || this.aborted) return;
 			if (reporter) reporter.phase(label);
+
+			// Counted within the phase: "Uploading 1/2" says far more than the
+			// same file's position among twenty thousand downloads.
+			let done = 0;
 
 			await runPool(
 				items,
@@ -225,16 +235,16 @@ export class SyncEngine {
 						stats.errors++;
 					}
 
-					current++;
-					if (reporter) reporter.tick(current, total);
+					done++;
+					if (reporter) reporter.tick(done, items.length);
 					await this.maybeCheckpoint(localSnapshot, remoteSnapshot, hooks);
 				},
 				() => this.aborted,
 			);
 		};
 
-		await runPhase("Transferring", creates);
-		await runPhase("Updating", updates);
+		await runPhase("Uploading", uploads);
+		await runPhase("Downloading", downloads);
 		await runPhase("Deleting", deletes);
 	}
 
