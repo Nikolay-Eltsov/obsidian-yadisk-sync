@@ -1,0 +1,69 @@
+name: Release
+
+# Builds the plugin from source on a tag and attaches signed artifacts, so
+# anyone can verify a release was built from this repository rather than
+# uploaded from a maintainer's laptop.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check the tag agrees with the manifest
+        run: |
+          tag="$GITHUB_REF_NAME"
+          manifest_version="$(node -p "require('./manifest.json').version")"
+          if [ "$tag" != "$manifest_version" ]; then
+            echo "::error::tag $tag does not match manifest.json version $manifest_version"
+            exit 1
+          fi
+          # Obsidian reads versions.json to decide which release an older app
+          # may install; a missing entry makes the release invisible to it.
+          if [ -z "$(node -p "require('./versions.json')['$tag'] || ''")" ]; then
+            echo "::error::versions.json has no entry for $tag"
+            exit 1
+          fi
+
+      - run: npm run typecheck
+
+      - run: npm run build
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            styles.css
+            manifest.json
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Notes were written by hand; only replace the binaries.
+            gh release upload "$tag" main.js manifest.json styles.css --clobber
+          else
+            # Left as a draft so release notes can be written before it goes out.
+            gh release create "$tag" main.js manifest.json styles.css \
+              --title "$tag" --draft --notes "Draft — replace with release notes."
+          fi
