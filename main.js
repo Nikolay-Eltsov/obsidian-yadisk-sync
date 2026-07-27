@@ -35,6 +35,7 @@ var DEFAULT_SETTINGS = {
   syncDirection: "bidirectional" /* Bidirectional */,
   conflictStrategy: "newer_wins" /* NewerWins */,
   autoSyncInterval: 0,
+  autoSyncSeconds: 0,
   excludePatterns: [
     ".trash/**"
   ],
@@ -392,6 +393,21 @@ var YandexDiskClient = class _YandexDiskClient {
     const resp = await this.request({ url: API_BASE });
     return resp.json;
   }
+  /**
+   * Counter that Yandex Disk bumps whenever anything on the account changes.
+   *
+   * One request answers "is a sync worth doing at all", which is what makes a
+   * short auto-sync interval affordable: a full scan of a large vault costs
+   * hundreds of requests, this costs one.
+   *
+   * Returns null when the field is absent — it is not part of the documented
+   * response, so callers must cope with it going away.
+   */
+  async getDiskRevision() {
+    const resp = await this.request({ url: `${API_BASE}?fields=revision` });
+    const data = resp.json;
+    return typeof data.revision === "number" ? data.revision : null;
+  }
   async getResource(path, opts = {}) {
     var _a2;
     const params = new URLSearchParams({ path });
@@ -741,26 +757,27 @@ var SyncEngine = class {
         if (reporter)
           reporter.message(`Scanning \u2014 ${vaultText}${diskText}`);
       };
-      const [localSnapshot, remoteSnapshot] = await Promise.all([
-        this.stateManager.buildLocalSnapshot(
-          this.settings,
-          prevState.localSnapshot,
-          (done, total) => {
-            vaultText = `vault ${done}/${total}`;
-            renderScan();
-          },
-          () => this.aborted
-        ),
-        this.stateManager.buildRemoteSnapshot(
-          this.client,
-          this.settings.remotePath,
-          this.settings,
-          (dirs, files) => {
-            diskText = ` \xB7 disk ${dirs} folders, ${files} files`;
-            renderScan();
-          }
-        )
-      ]);
+      const scanLocal = this.stateManager.buildLocalSnapshot(
+        this.settings,
+        prevState.localSnapshot,
+        (done, total) => {
+          vaultText = `vault ${done}/${total}`;
+          renderScan();
+        },
+        () => this.aborted
+      );
+      const scanRemote = hooks.remoteUnchanged ? Promise.resolve({ ...prevState.remoteSnapshot }) : this.stateManager.buildRemoteSnapshot(
+        this.client,
+        this.settings.remotePath,
+        this.settings,
+        (dirs, files) => {
+          diskText = ` \xB7 disk ${dirs} folders, ${files} files`;
+          renderScan();
+        }
+      );
+      if (hooks.remoteUnchanged)
+        diskText = " \xB7 disk unchanged";
+      const [localSnapshot, remoteSnapshot] = await Promise.all([scanLocal, scanRemote]);
       if (this.aborted)
         return this.finish(stats);
       if (reporter)
@@ -1553,14 +1570,33 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian5.Setting(containerEl).setName("Auto-sync interval (minutes)").setDesc("0 = disabled").addText(
-      (text) => text.setPlaceholder("0").setValue(String(this.plugin.settings.autoSyncInterval)).onChange((value) => {
-        const num = parseInt(value, 10);
-        this.plugin.settings.autoSyncInterval = isNaN(num) ? 0 : Math.max(0, num);
+    new import_obsidian5.Setting(containerEl).setName("Auto-sync interval").setDesc(
+      "How often to check Yandex Disk for changes. The check itself is a single request, so short intervals are cheap \u2014 but a change found on a large vault still takes a full scan to apply. Edits you make here sync 5 seconds after you stop typing, regardless of this setting."
+    ).addDropdown((dd) => {
+      const options = [
+        [0, "Off"],
+        [10, "Every 10 seconds"],
+        [30, "Every 30 seconds"],
+        [60, "Every minute"],
+        [300, "Every 5 minutes"],
+        [900, "Every 15 minutes"],
+        [1800, "Every 30 minutes"],
+        [3600, "Every hour"]
+      ];
+      const current = this.plugin.settings.autoSyncSeconds;
+      if (current > 0 && !options.some(([seconds]) => seconds === current)) {
+        options.push([current, `Every ${Math.round(current / 60)} minutes`]);
+        options.sort((a, b) => a[0] - b[0]);
+      }
+      for (const [seconds, label] of options) {
+        dd.addOption(String(seconds), label);
+      }
+      dd.setValue(String(this.plugin.settings.autoSyncSeconds)).onChange((value) => {
+        this.plugin.settings.autoSyncSeconds = parseInt(value, 10) || 0;
         this.plugin.setupAutoSync();
         this.plugin.queueSaveSettings();
-      })
-    );
+      });
+    });
     new import_obsidian5.Setting(containerEl).setName("Sync on startup").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.syncOnStartup).onChange((value) => {
         this.plugin.settings.syncOnStartup = value;
@@ -1610,6 +1646,9 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
 var DEBOUNCE_DELAY = 5e3;
 var POST_SYNC_QUIET_MS = 1e4;
 var SETTINGS_SAVE_DELAY = 400;
+var AUTO_FULL_SYNC_MS = 10 * 60 * 1e3;
+var NO_REVISION_MIN_INTERVAL_MS = 60 * 1e3;
+var FULL_SCAN_MAX_AGE_MS = 10 * 60 * 1e3;
 var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
   constructor() {
     super(...arguments);
@@ -1622,6 +1661,11 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.currentEngine = null;
     this.debouncedSyncTimer = null;
     this.lastSyncEndedAt = 0;
+    this.lastRevision = null;
+    this.revisionSupported = true;
+    this.lastFullSyncAt = 0;
+    this.lastFullScanAt = 0;
+    this.autoTickInFlight = false;
     /**
      * Settings live in the same file as the snapshots, which run to megabytes
      * on a large vault. Writing on every keystroke in the settings tab would
@@ -1632,10 +1676,13 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     }, SETTINGS_SAVE_DELAY);
   }
   async onload() {
-    var _a2;
+    var _a2, _b2;
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (_a2 = data == null ? void 0 : data.settings) != null ? _a2 : {});
     this.settings.concurrency = clampConcurrency(this.settings.concurrency);
+    if (((_b2 = data == null ? void 0 : data.settings) == null ? void 0 : _b2.autoSyncSeconds) === void 0 && this.settings.autoSyncInterval > 0) {
+      this.settings.autoSyncSeconds = this.settings.autoSyncInterval * 60;
+    }
     this.client = new YandexDiskClient(
       this.settings.accessToken,
       this.settings.remotePath,
@@ -1685,7 +1732,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
     if (this.settings.syncOnStartup && this.settings.accessToken) {
       activeWindow.setTimeout(() => {
-        void this.runSync();
+        void this.runSync(void 0, "auto");
       }, 3e3);
     }
   }
@@ -1711,7 +1758,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       this.debouncedSyncTimer = null;
       if (this.isQuietPeriod())
         return;
-      void this.runSync();
+      void this.runSync(void 0, "auto");
     }, DEBOUNCE_DELAY);
   }
   isQuietPeriod() {
@@ -1738,18 +1785,69 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       window.clearInterval(this.autoSyncIntervalId);
       this.autoSyncIntervalId = null;
     }
-    if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
-      const ms = this.settings.autoSyncInterval * 60 * 1e3;
+    if (this.settings.autoSyncSeconds > 0 && this.settings.accessToken) {
+      const ms = this.settings.autoSyncSeconds * 1e3;
       this.autoSyncIntervalId = this.registerInterval(
         window.setInterval(() => {
-          void this.runSync();
+          void this.autoSyncTick();
         }, ms)
       );
     }
   }
-  async runSync(directionOverride) {
+  /**
+   * Decides whether the tick is worth a full sync.
+   *
+   * Polling every few seconds is only affordable because the disk revision
+   * answers "did anything change" in a single request; a full scan of a large
+   * vault costs hundreds and takes longer than the interval itself.
+   */
+  async autoSyncTick() {
+    if (!this.settings.accessToken)
+      return;
+    if (this.autoTickInFlight || this.syncInProgress || this.isQuietPeriod())
+      return;
+    this.autoTickInFlight = true;
+    try {
+      const sinceFullSync = Date.now() - this.lastFullSyncAt;
+      if (sinceFullSync >= AUTO_FULL_SYNC_MS) {
+        await this.runSync(void 0, "auto");
+        return;
+      }
+      const probe = await this.probeRemote();
+      if (probe === "unchanged")
+        return;
+      if (probe === "unknown" && sinceFullSync < NO_REVISION_MIN_INTERVAL_MS)
+        return;
+      await this.runSync(void 0, "auto", false);
+    } finally {
+      this.autoTickInFlight = false;
+    }
+  }
+  /**
+   * Asks the disk revision whether the stored remote snapshot is still
+   * accurate. "unknown" means the question could not be answered, which is
+   * never treated as "unchanged".
+   */
+  async probeRemote() {
+    if (!this.revisionSupported || this.lastRevision === null)
+      return "unknown";
+    if (Date.now() - this.lastFullScanAt >= FULL_SCAN_MAX_AGE_MS)
+      return "changed";
+    try {
+      const revision = await this.client.getDiskRevision();
+      if (revision === null) {
+        this.revisionSupported = false;
+        return "unknown";
+      }
+      return revision === this.lastRevision ? "unchanged" : "changed";
+    } catch (e) {
+      return "unknown";
+    }
+  }
+  async runSync(directionOverride, trigger = "manual", remoteUnchangedHint) {
     if (this.syncInProgress) {
-      new import_obsidian6.Notice("Sync already in progress");
+      if (trigger === "manual")
+        new import_obsidian6.Notice("Sync already in progress");
       return;
     }
     if (!this.settings.accessToken) {
@@ -1766,12 +1864,23 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     });
     progress.open();
     try {
+      const remoteUnchanged = remoteUnchangedHint != null ? remoteUnchangedHint : await this.probeRemote() === "unchanged";
       const stats = await engine.run(directionOverride, {
         reporter: progress,
-        checkpoint: () => this.saveSettings()
+        checkpoint: () => this.saveSettings(),
+        remoteUnchanged
       });
       await this.saveSettings();
-      this.reportResult(stats);
+      this.reportResult(stats, trigger);
+      this.lastFullSyncAt = Date.now();
+      if (!remoteUnchanged && !stats.aborted)
+        this.lastFullScanAt = Date.now();
+      if (this.revisionSupported && !stats.aborted) {
+        try {
+          this.lastRevision = await this.client.getDiskRevision();
+        } catch (e) {
+        }
+      }
     } catch (e) {
       console.error("[YaDisk Sync] Sync error:", e);
       new import_obsidian6.Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
@@ -1783,7 +1892,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       this.currentEngine = null;
     }
   }
-  reportResult(stats) {
+  reportResult(stats, trigger) {
     const moved = stats.uploaded + stats.downloaded + stats.deleted;
     const counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
     if (stats.aborted) {
@@ -1796,8 +1905,13 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       this.updateStatusBar("error");
       return;
     }
-    new import_obsidian6.Notice(moved > 0 ? `Sync complete. ${counts}` : "Sync complete. Already up to date");
     this.updateStatusBar("idle");
+    if (moved > 0) {
+      new import_obsidian6.Notice(`Sync complete. ${counts}`);
+      return;
+    }
+    if (trigger === "manual")
+      new import_obsidian6.Notice("Sync complete. Already up to date");
   }
   abortSync() {
     if (this.currentEngine) {

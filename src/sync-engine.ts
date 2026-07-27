@@ -38,6 +38,12 @@ export interface SyncHooks {
 	reporter?: SyncReporter;
 	/** Persists the current snapshots so an interrupted sync is not wasted. */
 	checkpoint?: () => Promise<void>;
+	/**
+	 * Set when the disk revision proves nothing on the remote has moved since
+	 * the stored snapshot was taken. Lets a sync caused by a local edit skip
+	 * the remote walk entirely, which is otherwise the whole cost of the run.
+	 */
+	remoteUnchanged?: boolean;
 }
 
 export class SyncEngine {
@@ -78,26 +84,31 @@ export class SyncEngine {
 				if (reporter) reporter.message(`Scanning — ${vaultText}${diskText}`);
 			};
 
-			const [localSnapshot, remoteSnapshot] = await Promise.all([
-				this.stateManager.buildLocalSnapshot(
-					this.settings,
-					prevState.localSnapshot,
-					(done, total) => {
-						vaultText = `vault ${done}/${total}`;
-						renderScan();
-					},
-					() => this.aborted,
-				),
-				this.stateManager.buildRemoteSnapshot(
-					this.client,
-					this.settings.remotePath,
-					this.settings,
-					(dirs, files) => {
-						diskText = ` · disk ${dirs} folders, ${files} files`;
-						renderScan();
-					},
-				),
-			]);
+			const scanLocal = this.stateManager.buildLocalSnapshot(
+				this.settings,
+				prevState.localSnapshot,
+				(done, total) => {
+					vaultText = `vault ${done}/${total}`;
+					renderScan();
+				},
+				() => this.aborted,
+			);
+
+			const scanRemote = hooks.remoteUnchanged
+				? Promise.resolve({ ...prevState.remoteSnapshot })
+				: this.stateManager.buildRemoteSnapshot(
+						this.client,
+						this.settings.remotePath,
+						this.settings,
+						(dirs, files) => {
+							diskText = ` · disk ${dirs} folders, ${files} files`;
+							renderScan();
+						},
+					);
+
+			if (hooks.remoteUnchanged) diskText = " · disk unchanged";
+
+			const [localSnapshot, remoteSnapshot] = await Promise.all([scanLocal, scanRemote]);
 
 			if (this.aborted) return this.finish(stats);
 

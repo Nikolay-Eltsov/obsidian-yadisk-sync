@@ -329,6 +329,22 @@ export class YandexDiskClient {
 		return (resp.json as unknown) as YaDiskDiskInfo;
 	}
 
+	/**
+	 * Counter that Yandex Disk bumps whenever anything on the account changes.
+	 *
+	 * One request answers "is a sync worth doing at all", which is what makes a
+	 * short auto-sync interval affordable: a full scan of a large vault costs
+	 * hundreds of requests, this costs one.
+	 *
+	 * Returns null when the field is absent — it is not part of the documented
+	 * response, so callers must cope with it going away.
+	 */
+	async getDiskRevision(): Promise<number | null> {
+		const resp = await this.request({ url: `${API_BASE}?fields=revision` });
+		const data = (resp.json as unknown) as { revision?: unknown };
+		return typeof data.revision === "number" ? data.revision : null;
+	}
+
 	async getResource(
 		path: string,
 		opts: { limit?: number; offset?: number; fields?: string } = {},

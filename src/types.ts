@@ -29,7 +29,10 @@ export interface YaDiskSyncSettings {
 	remotePath: string;
 	syncDirection: SyncDirection;
 	conflictStrategy: ConflictStrategy;
+	/** @deprecated Minutes. Kept only to migrate settings saved before 1.2.1. */
 	autoSyncInterval: number;
+	/** Auto-sync poll interval in seconds. 0 disables it. */
+	autoSyncSeconds: number;
 	excludePatterns: string[];
 	maxFileSizeMB: number;
 	syncOnStartup: boolean;
@@ -55,6 +58,7 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	syncDirection: SyncDirection.Bidirectional,
 	conflictStrategy: ConflictStrategy.NewerWins,
 	autoSyncInterval: 0,
+	autoSyncSeconds: 0,
 	excludePatterns: [
 		".trash/**",
 	],

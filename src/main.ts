@@ -26,6 +26,25 @@ const POST_SYNC_QUIET_MS = 10000;
 
 const SETTINGS_SAVE_DELAY = 400;
 
+/**
+ * Sync unconditionally at least this often, even if the disk revision says
+ * nothing changed. Covers work left behind by a cancelled or failed run.
+ */
+const AUTO_FULL_SYNC_MS = 10 * 60 * 1000;
+
+/**
+ * Floor on the poll interval when the revision probe is unavailable. Without a
+ * cheap change check every tick is a full scan of both sides, which on a large
+ * vault must not run more than about once a minute.
+ */
+const NO_REVISION_MIN_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Walk the remote side at least this often even when the revision says it is
+ * untouched, so the stored snapshot cannot drift indefinitely.
+ */
+const FULL_SCAN_MAX_AGE_MS = 10 * 60 * 1000;
+
 interface PluginData {
 	settings?: Partial<YaDiskSyncSettings>;
 	state?: PersistedSyncState;
@@ -43,6 +62,11 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private currentEngine: SyncEngine | null = null;
 	private debouncedSyncTimer: number | null = null;
 	private lastSyncEndedAt = 0;
+	private lastRevision: number | null = null;
+	private revisionSupported = true;
+	private lastFullSyncAt = 0;
+	private lastFullScanAt = 0;
+	private autoTickInFlight = false;
 
 	/**
 	 * Settings live in the same file as the snapshots, which run to megabytes
@@ -59,6 +83,11 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings ?? {});
 		this.settings.concurrency = clampConcurrency(this.settings.concurrency);
+
+		// The interval used to be expressed in minutes.
+		if (data?.settings?.autoSyncSeconds === undefined && this.settings.autoSyncInterval > 0) {
+			this.settings.autoSyncSeconds = this.settings.autoSyncInterval * 60;
+		}
 
 		this.client = new YandexDiskClient(
 			this.settings.accessToken,
@@ -120,7 +149,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
 
 		if (this.settings.syncOnStartup && this.settings.accessToken) {
-			activeWindow.setTimeout(() => { void this.runSync(); }, 3000);
+			activeWindow.setTimeout(() => { void this.runSync(undefined, "auto"); }, 3000);
 		}
 	}
 
@@ -146,7 +175,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 			// Re-checked here too: the vault watcher can deliver the tail of a
 			// large sync's writes after the timer was already armed.
 			if (this.isQuietPeriod()) return;
-			void this.runSync();
+			void this.runSync(undefined, "auto");
 		}, DEBOUNCE_DELAY);
 	}
 
@@ -178,17 +207,78 @@ export default class YaDiskSyncPlugin extends Plugin {
 			this.autoSyncIntervalId = null;
 		}
 
-		if (this.settings.autoSyncInterval > 0 && this.settings.accessToken) {
-			const ms = this.settings.autoSyncInterval * 60 * 1000;
+		if (this.settings.autoSyncSeconds > 0 && this.settings.accessToken) {
+			const ms = this.settings.autoSyncSeconds * 1000;
 			this.autoSyncIntervalId = this.registerInterval(
-				window.setInterval(() => { void this.runSync(); }, ms),
+				window.setInterval(() => { void this.autoSyncTick(); }, ms),
 			);
 		}
 	}
 
-	private async runSync(directionOverride?: SyncDirection): Promise<void> {
+	/**
+	 * Decides whether the tick is worth a full sync.
+	 *
+	 * Polling every few seconds is only affordable because the disk revision
+	 * answers "did anything change" in a single request; a full scan of a large
+	 * vault costs hundreds and takes longer than the interval itself.
+	 */
+	private async autoSyncTick(): Promise<void> {
+		if (!this.settings.accessToken) return;
+		if (this.autoTickInFlight || this.syncInProgress || this.isQuietPeriod()) return;
+
+		this.autoTickInFlight = true;
+		try {
+			const sinceFullSync = Date.now() - this.lastFullSyncAt;
+			if (sinceFullSync >= AUTO_FULL_SYNC_MS) {
+				await this.runSync(undefined, "auto");
+				return;
+			}
+
+			const probe = await this.probeRemote();
+			if (probe === "unchanged") return;
+
+			// With no working probe every tick would be a full scan of both
+			// sides, so fall back to a much slower cadence.
+			if (probe === "unknown" && sinceFullSync < NO_REVISION_MIN_INTERVAL_MS) return;
+
+			await this.runSync(undefined, "auto", false);
+		} finally {
+			this.autoTickInFlight = false;
+		}
+	}
+
+	/**
+	 * Asks the disk revision whether the stored remote snapshot is still
+	 * accurate. "unknown" means the question could not be answered, which is
+	 * never treated as "unchanged".
+	 */
+	private async probeRemote(): Promise<"unchanged" | "changed" | "unknown"> {
+		if (!this.revisionSupported || this.lastRevision === null) return "unknown";
+		// Re-walk the tree periodically regardless, so the snapshot cannot drift
+		// forever behind an undocumented counter.
+		if (Date.now() - this.lastFullScanAt >= FULL_SCAN_MAX_AGE_MS) return "changed";
+
+		try {
+			const revision = await this.client.getDiskRevision();
+			if (revision === null) {
+				this.revisionSupported = false;
+				return "unknown";
+			}
+			return revision === this.lastRevision ? "unchanged" : "changed";
+		} catch {
+			return "unknown";
+		}
+	}
+
+	private async runSync(
+		directionOverride?: SyncDirection,
+		trigger: "manual" | "auto" = "manual",
+		remoteUnchangedHint?: boolean,
+	): Promise<void> {
 		if (this.syncInProgress) {
-			new Notice("Sync already in progress");
+			// Only a deliberate tap deserves an answer; an auto tick that lands
+			// mid-sync should pass in silence.
+			if (trigger === "manual") new Notice("Sync already in progress");
 			return;
 		}
 
@@ -210,13 +300,32 @@ export default class YaDiskSyncPlugin extends Plugin {
 		progress.open();
 
 		try {
+			// A sync set off by a local edit should not pay for a walk of the
+			// whole remote tree. One request settles whether that walk would
+			// find anything; the caller may already know the answer.
+			const remoteUnchanged =
+				remoteUnchangedHint ?? (await this.probeRemote()) === "unchanged";
+
 			const stats = await engine.run(directionOverride, {
 				reporter: progress,
 				checkpoint: () => this.saveSettings(),
+				remoteUnchanged,
 			});
 
 			await this.saveSettings();
-			this.reportResult(stats);
+			this.reportResult(stats, trigger);
+
+			this.lastFullSyncAt = Date.now();
+			if (!remoteUnchanged && !stats.aborted) this.lastFullScanAt = Date.now();
+			if (this.revisionSupported && !stats.aborted) {
+				try {
+					// Our own transfers move the revision; record where it landed
+					// so the next tick does not read them back as a change.
+					this.lastRevision = await this.client.getDiskRevision();
+				} catch {
+					// Not worth surfacing: the next tick just syncs.
+				}
+			}
 		} catch (e) {
 			console.error("[YaDisk Sync] Sync error:", e);
 			new Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
@@ -229,7 +338,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		}
 	}
 
-	private reportResult(stats: SyncStats): void {
+	private reportResult(stats: SyncStats, trigger: "manual" | "auto"): void {
 		const moved = stats.uploaded + stats.downloaded + stats.deleted;
 		const counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
 
@@ -245,10 +354,17 @@ export default class YaDiskSyncPlugin extends Plugin {
 			return;
 		}
 
-		// Reported even when nothing moved: on mobile there is no status bar, so
-		// silence here is indistinguishable from the sync never having run.
-		new Notice(moved > 0 ? `Sync complete. ${counts}` : "Sync complete. Already up to date");
 		this.updateStatusBar("idle");
+
+		if (moved > 0) {
+			new Notice(`Sync complete. ${counts}`);
+			return;
+		}
+
+		// A manual tap is reported even when nothing moved: on mobile there is no
+		// status bar, so silence is indistinguishable from the sync never having
+		// run. An automatic tick stays quiet — it fires all day.
+		if (trigger === "manual") new Notice("Sync complete. Already up to date");
 	}
 
 	private abortSync(): void {

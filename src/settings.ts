@@ -143,19 +143,36 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Auto-sync interval (minutes)")
-			.setDesc("0 = disabled")
-			.addText((text) =>
-				text
-					.setPlaceholder("0")
-					.setValue(String(this.plugin.settings.autoSyncInterval))
-					.onChange((value) => {
-						const num = parseInt(value, 10);
-						this.plugin.settings.autoSyncInterval = isNaN(num) ? 0 : Math.max(0, num);
-						this.plugin.setupAutoSync();
-						this.plugin.queueSaveSettings();
-					}),
-			);
+			.setName("Auto-sync interval")
+			.setDesc(
+				"How often to check Yandex Disk for changes. The check itself is a single request, so short intervals are cheap — but a change found on a large vault still takes a full scan to apply. Edits you make here sync 5 seconds after you stop typing, regardless of this setting.",
+			)
+			.addDropdown((dd) => {
+				const options: [number, string][] = [
+					[0, "Off"],
+					[10, "Every 10 seconds"],
+					[30, "Every 30 seconds"],
+					[60, "Every minute"],
+					[300, "Every 5 minutes"],
+					[900, "Every 15 minutes"],
+					[1800, "Every 30 minutes"],
+					[3600, "Every hour"],
+				];
+				const current = this.plugin.settings.autoSyncSeconds;
+				if (current > 0 && !options.some(([seconds]) => seconds === current)) {
+					// Carried over from the old minutes-based setting.
+					options.push([current, `Every ${Math.round(current / 60)} minutes`]);
+					options.sort((a, b) => a[0] - b[0]);
+				}
+				for (const [seconds, label] of options) {
+					dd.addOption(String(seconds), label);
+				}
+				dd.setValue(String(this.plugin.settings.autoSyncSeconds)).onChange((value) => {
+					this.plugin.settings.autoSyncSeconds = parseInt(value, 10) || 0;
+					this.plugin.setupAutoSync();
+					this.plugin.queueSaveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Sync on startup")
