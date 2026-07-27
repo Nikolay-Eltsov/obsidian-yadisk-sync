@@ -53,6 +53,44 @@
 	color: var(--text-on-accent);
 }
 
+.yadisk-conflict-bulk {
+	border-top: 1px solid var(--background-modifier-border);
+	margin-top: 12px;
+	padding-top: 12px;
+	font-size: 0.9em;
+}
+
+.yadisk-conflict-bulk .conflict-choice {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.yadisk-conflict-bulk .conflict-choice button {
+	flex: 1;
+}
+
+.yadisk-conflict-bulk .conflict-choice button.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.yadisk-progress {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.yadisk-progress .yadisk-progress-text {
+	flex: 1;
+	min-width: 0;
+	word-break: break-word;
+}
+
+.yadisk-progress .yadisk-progress-cancel {
+	flex: 0 0 auto;
+}
+
 .yadisk-sync-settings .setting-instructions {
 	font-size: 0.85em;
 	color: var(--text-muted);

@@ -1,5 +1,11 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { SyncDirection, ConflictStrategy, DEFAULT_SETTINGS } from "./types";
+import {
+	SyncDirection,
+	ConflictStrategy,
+	DEFAULT_SETTINGS,
+	MIN_CONCURRENCY,
+	MAX_CONCURRENCY,
+} from "./types";
 import type YaDiskSyncPlugin from "./main";
 
 export class YaDiskSyncSettingTab extends PluginSettingTab {
@@ -100,10 +106,10 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("/vault")
 					.setValue(this.plugin.settings.remotePath)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.remotePath = value.trim() || DEFAULT_SETTINGS.remotePath;
-						await this.plugin.saveSettings();
 						this.plugin.client.setRemotePath(this.plugin.settings.remotePath);
+						this.plugin.queueSaveSettings();
 					}),
 			);
 
@@ -115,9 +121,9 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 					.addOption(SyncDirection.Push, "Push only")
 					.addOption(SyncDirection.Pull, "Pull only")
 					.setValue(this.plugin.settings.syncDirection)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.syncDirection = value as SyncDirection;
-						await this.plugin.saveSettings();
+						this.plugin.queueSaveSettings();
 					}),
 			);
 
@@ -130,33 +136,50 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 					.addOption(ConflictStrategy.RemoteWins, "Remote wins")
 					.addOption(ConflictStrategy.Ask, "Ask")
 					.setValue(this.plugin.settings.conflictStrategy)
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.conflictStrategy = value as ConflictStrategy;
-						await this.plugin.saveSettings();
+						this.plugin.queueSaveSettings();
 					}),
 			);
 
 		new Setting(containerEl)
-			.setName("Auto-sync interval (minutes)")
-			.setDesc("0 = disabled")
-			.addText((text) =>
-				text
-					.setPlaceholder("0")
-					.setValue(String(this.plugin.settings.autoSyncInterval))
-					.onChange(async (value) => {
-						const num = parseInt(value, 10);
-						this.plugin.settings.autoSyncInterval = isNaN(num) ? 0 : Math.max(0, num);
-						await this.plugin.saveSettings();
-						this.plugin.setupAutoSync();
-					}),
-			);
+			.setName("Auto-sync interval")
+			.setDesc(
+				"How often to check Yandex Disk for changes. The check itself is a single request, so short intervals are cheap — but a change found on a large vault still takes a full scan to apply. Edits you make here sync 5 seconds after you stop typing, regardless of this setting.",
+			)
+			.addDropdown((dd) => {
+				const options: [number, string][] = [
+					[0, "Off"],
+					[10, "Every 10 seconds"],
+					[30, "Every 30 seconds"],
+					[60, "Every minute"],
+					[300, "Every 5 minutes"],
+					[900, "Every 15 minutes"],
+					[1800, "Every 30 minutes"],
+					[3600, "Every hour"],
+				];
+				const current = this.plugin.settings.autoSyncSeconds;
+				if (current > 0 && !options.some(([seconds]) => seconds === current)) {
+					// Carried over from the old minutes-based setting.
+					options.push([current, `Every ${Math.round(current / 60)} minutes`]);
+					options.sort((a, b) => a[0] - b[0]);
+				}
+				for (const [seconds, label] of options) {
+					dd.addOption(String(seconds), label);
+				}
+				dd.setValue(String(this.plugin.settings.autoSyncSeconds)).onChange((value) => {
+					this.plugin.settings.autoSyncSeconds = parseInt(value, 10) || 0;
+					this.plugin.setupAutoSync();
+					this.plugin.queueSaveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Sync on startup")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
+				toggle.setValue(this.plugin.settings.syncOnStartup).onChange((value) => {
 					this.plugin.settings.syncOnStartup = value;
-					await this.plugin.saveSettings();
+					this.plugin.queueSaveSettings();
 				}),
 			);
 
@@ -173,12 +196,12 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 						t.inputEl.rows = 5;
 						t.inputEl.addClass("yadisk-textarea-wide");
 					})
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.excludePatterns = value
 							.split("\n")
 							.map((s) => s.trim())
 							.filter(Boolean);
-						await this.plugin.saveSettings();
+						this.plugin.queueSaveSettings();
 					}),
 			);
 
@@ -188,11 +211,39 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 				text
 					.setPlaceholder("50")
 					.setValue(String(this.plugin.settings.maxFileSizeMB))
-					.onChange(async (value) => {
+					.onChange((value) => {
 						const num = parseInt(value, 10);
 						this.plugin.settings.maxFileSizeMB = isNaN(num) ? 50 : Math.max(1, num);
-						await this.plugin.saveSettings();
+						this.plugin.queueSaveSettings();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Parallel transfers")
+			.setDesc(
+				"How many files to transfer at once. Higher is faster on large vaults; lower it if Yandex Disk starts rate-limiting.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(MIN_CONCURRENCY, MAX_CONCURRENCY, 1)
+					.setValue(this.plugin.settings.concurrency)
+					.setDynamicTooltip()
+					.onChange((value) => {
+						this.plugin.settings.concurrency = value;
+						this.plugin.queueSaveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Keep screen on during long syncs")
+			.setDesc(
+				"On iOS a locked screen suspends Obsidian and freezes the sync. This holds the screen awake for syncs of 50 files or more; short syncs are unaffected.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.keepScreenOn).onChange((value) => {
+					this.plugin.settings.keepScreenOn = value;
+					this.plugin.queueSaveSettings();
+				}),
 			);
 
 		new Setting(containerEl)

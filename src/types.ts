@@ -29,11 +29,21 @@ export interface YaDiskSyncSettings {
 	remotePath: string;
 	syncDirection: SyncDirection;
 	conflictStrategy: ConflictStrategy;
+	/** @deprecated Minutes. Kept only to migrate settings saved before 1.2.1. */
 	autoSyncInterval: number;
+	/** Auto-sync poll interval in seconds. 0 disables it. */
+	autoSyncSeconds: number;
 	excludePatterns: string[];
 	maxFileSizeMB: number;
 	syncOnStartup: boolean;
+	/** How many transfers/listings may be in flight at once. */
+	concurrency: number;
+	/** Hold a screen wake lock for the duration of a large sync. */
+	keepScreenOn: boolean;
 }
+
+export const MIN_CONCURRENCY = 1;
+export const MAX_CONCURRENCY = 8;
 
 export interface YaDiskTokenResponse {
 	access_token: string;
@@ -50,12 +60,18 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	syncDirection: SyncDirection.Bidirectional,
 	conflictStrategy: ConflictStrategy.NewerWins,
 	autoSyncInterval: 0,
+	autoSyncSeconds: 0,
 	excludePatterns: [
 		".trash/**",
 	],
 	maxFileSizeMB: 50,
 	syncOnStartup: false,
+	concurrency: 4,
+	keepScreenOn: true,
 };
+
+/** Below this many files a sync is too short to be worth a wake lock. */
+export const WAKE_LOCK_MIN_ITEMS = 50;
 
 export interface FileRecord {
 	path: string;
@@ -68,6 +84,22 @@ export interface SyncState {
 	lastSyncTime: number;
 	localSnapshot: Record<string, FileRecord>;
 	remoteSnapshot: Record<string, FileRecord>;
+}
+
+/**
+ * On-disk form of a {@link FileRecord}: `[mtime, size, md5]`.
+ * The path is already the map key, so repeating it in the value roughly
+ * doubles the size of a snapshot holding tens of thousands of files.
+ */
+export type PackedRecord = [number, number, string];
+
+export const PERSISTED_STATE_VERSION = 2;
+
+export interface PersistedSyncState {
+	version: number;
+	lastSyncTime: number;
+	local: Record<string, PackedRecord>;
+	remote: Record<string, PackedRecord>;
 }
 
 export interface SyncPlanItem {
