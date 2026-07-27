@@ -44,6 +44,12 @@ export interface SyncHooks {
 	 * the remote walk entirely, which is otherwise the whole cost of the run.
 	 */
 	remoteUnchanged?: boolean;
+	/**
+	 * Called once the size of the run is known, before any transfer starts.
+	 * Lets the caller decide whether this run is worth holding the screen on
+	 * for — on iOS a locked screen suspends the app and freezes the sync.
+	 */
+	onPlanReady?: (total: number) => void;
 }
 
 export class SyncEngine {
@@ -168,6 +174,7 @@ export class SyncEngine {
 	): Promise<void> {
 		const actionItems = plan.filter((p) => p.action !== SyncAction.Skip);
 		const total = actionItems.length;
+		if (hooks.onPlanReady) hooks.onPlanReady(total);
 		if (total === 0) return;
 
 		const creates = actionItems.filter(

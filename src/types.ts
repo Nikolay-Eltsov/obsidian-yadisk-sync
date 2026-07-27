@@ -38,6 +38,8 @@ export interface YaDiskSyncSettings {
 	syncOnStartup: boolean;
 	/** How many transfers/listings may be in flight at once. */
 	concurrency: number;
+	/** Hold a screen wake lock for the duration of a large sync. */
+	keepScreenOn: boolean;
 }
 
 export const MIN_CONCURRENCY = 1;
@@ -65,7 +67,11 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	maxFileSizeMB: 50,
 	syncOnStartup: false,
 	concurrency: 4,
+	keepScreenOn: true,
 };
+
+/** Below this many files a sync is too short to be worth a wake lock. */
+export const WAKE_LOCK_MIN_ITEMS = 50;
 
 export interface FileRecord {
 	path: string;

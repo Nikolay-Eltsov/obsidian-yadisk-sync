@@ -7,6 +7,7 @@ import {
 	PersistedSyncState,
 	MIN_CONCURRENCY,
 	MAX_CONCURRENCY,
+	WAKE_LOCK_MIN_ITEMS,
 } from "./types";
 import { YandexDiskClient } from "./yandex-client";
 import { SyncEngine, SyncStats } from "./sync-engine";
@@ -67,6 +68,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private lastFullSyncAt = 0;
 	private lastFullScanAt = 0;
 	private autoTickInFlight = false;
+	private wakeLock: WakeLockLike | null = null;
 
 	/**
 	 * Settings live in the same file as the snapshots, which run to megabytes
@@ -142,6 +144,15 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.updateStatusBar("idle");
 
 		this.setupAutoSync();
+
+		// iOS freezes the app while it is backgrounded, so an interval that was
+		// due mid-suspension simply never fired. Catch up the moment the user
+		// comes back rather than waiting out another full interval.
+		this.registerDomEvent(document, "visibilitychange", () => {
+			if (document.visibilityState !== "visible") return;
+			if (this.settings.autoSyncSeconds <= 0) return;
+			void this.autoSyncTick();
+		});
 
 		this.registerEvent(this.app.vault.on("create", (file) => this.onFileChange(file)));
 		this.registerEvent(this.app.vault.on("modify", (file) => this.onFileChange(file)));
@@ -310,6 +321,9 @@ export default class YaDiskSyncPlugin extends Plugin {
 				reporter: progress,
 				checkpoint: () => this.saveSettings(),
 				remoteUnchanged,
+				onPlanReady: (total) => {
+					if (total >= WAKE_LOCK_MIN_ITEMS) void this.acquireWakeLock();
+				},
 			});
 
 			await this.saveSettings();
@@ -332,10 +346,38 @@ export default class YaDiskSyncPlugin extends Plugin {
 			this.updateStatusBar("error");
 		} finally {
 			progress.close();
+			this.releaseWakeLock();
 			this.syncInProgress = false;
 			this.lastSyncEndedAt = Date.now();
 			this.currentEngine = null;
 		}
+	}
+
+	/**
+	 * Keeps the screen awake for the duration of a long sync.
+	 *
+	 * iOS suspends the app when the screen locks, which freezes a transfer
+	 * mid-run; on a first sync of thousands of files the auto-lock timer will
+	 * otherwise fire long before the sync finishes. Best effort only — the API
+	 * is absent on most desktop setups and may refuse.
+	 */
+	private async acquireWakeLock(): Promise<void> {
+		if (!this.settings.keepScreenOn || this.wakeLock) return;
+
+		const nav = navigator as Navigator & WakeLockNavigator;
+		if (!nav.wakeLock) return;
+
+		try {
+			this.wakeLock = await nav.wakeLock.request("screen");
+		} catch {
+			// Refused, or the document was already hidden. Nothing to do.
+		}
+	}
+
+	private releaseWakeLock(): void {
+		const lock = this.wakeLock;
+		this.wakeLock = null;
+		if (lock) void lock.release().catch(() => undefined);
 	}
 
 	private reportResult(stats: SyncStats, trigger: "manual" | "auto"): void {
@@ -399,6 +441,14 @@ export default class YaDiskSyncPlugin extends Plugin {
 				break;
 		}
 	}
+}
+
+interface WakeLockLike {
+	release(): Promise<void>;
+}
+
+interface WakeLockNavigator {
+	wakeLock?: { request(type: "screen"): Promise<WakeLockLike> };
 }
 
 function clampConcurrency(value: number): number {

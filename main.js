@@ -41,8 +41,10 @@ var DEFAULT_SETTINGS = {
   ],
   maxFileSizeMB: 50,
   syncOnStartup: false,
-  concurrency: 4
+  concurrency: 4,
+  keepScreenOn: true
 };
+var WAKE_LOCK_MIN_ITEMS = 50;
 var PERSISTED_STATE_VERSION = 2;
 
 // src/yandex-client.ts
@@ -823,6 +825,8 @@ var SyncEngine = class {
   async executePlan(plan, stats, localSnapshot, remoteSnapshot, hooks) {
     const actionItems = plan.filter((p) => p.action !== "skip" /* Skip */);
     const total = actionItems.length;
+    if (hooks.onPlanReady)
+      hooks.onPlanReady(total);
     if (total === 0)
       return;
     const creates = actionItems.filter(
@@ -1629,6 +1633,14 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.queueSaveSettings();
       })
     );
+    new import_obsidian5.Setting(containerEl).setName("Keep screen on during long syncs").setDesc(
+      "On iOS a locked screen suspends Obsidian and freezes the sync. This holds the screen awake for syncs of 50 files or more; short syncs are unaffected."
+    ).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.keepScreenOn).onChange((value) => {
+        this.plugin.settings.keepScreenOn = value;
+        this.plugin.queueSaveSettings();
+      })
+    );
     new import_obsidian5.Setting(containerEl).setName("Reset sync state").setDesc("Next sync will be a full comparison").addButton(
       (btn) => btn.setButtonText("Reset").setWarning().onClick((evt) => {
         this.plugin.stateManager.resetState();
@@ -1666,6 +1678,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.lastFullSyncAt = 0;
     this.lastFullScanAt = 0;
     this.autoTickInFlight = false;
+    this.wakeLock = null;
     /**
      * Settings live in the same file as the snapshots, which run to megabytes
      * on a large vault. Writing on every keystroke in the settings tab would
@@ -1726,6 +1739,13 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.statusBarEl = this.addStatusBarItem();
     this.updateStatusBar("idle");
     this.setupAutoSync();
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.visibilityState !== "visible")
+        return;
+      if (this.settings.autoSyncSeconds <= 0)
+        return;
+      void this.autoSyncTick();
+    });
     this.registerEvent(this.app.vault.on("create", (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on("modify", (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on("delete", (file) => this.onFileChange(file)));
@@ -1868,7 +1888,11 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       const stats = await engine.run(directionOverride, {
         reporter: progress,
         checkpoint: () => this.saveSettings(),
-        remoteUnchanged
+        remoteUnchanged,
+        onPlanReady: (total) => {
+          if (total >= WAKE_LOCK_MIN_ITEMS)
+            void this.acquireWakeLock();
+        }
       });
       await this.saveSettings();
       this.reportResult(stats, trigger);
@@ -1887,10 +1911,36 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       this.updateStatusBar("error");
     } finally {
       progress.close();
+      this.releaseWakeLock();
       this.syncInProgress = false;
       this.lastSyncEndedAt = Date.now();
       this.currentEngine = null;
     }
+  }
+  /**
+   * Keeps the screen awake for the duration of a long sync.
+   *
+   * iOS suspends the app when the screen locks, which freezes a transfer
+   * mid-run; on a first sync of thousands of files the auto-lock timer will
+   * otherwise fire long before the sync finishes. Best effort only — the API
+   * is absent on most desktop setups and may refuse.
+   */
+  async acquireWakeLock() {
+    if (!this.settings.keepScreenOn || this.wakeLock)
+      return;
+    const nav = navigator;
+    if (!nav.wakeLock)
+      return;
+    try {
+      this.wakeLock = await nav.wakeLock.request("screen");
+    } catch (e) {
+    }
+  }
+  releaseWakeLock() {
+    const lock = this.wakeLock;
+    this.wakeLock = null;
+    if (lock)
+      void lock.release().catch(() => void 0);
   }
   reportResult(stats, trigger) {
     const moved = stats.uploaded + stats.downloaded + stats.deleted;

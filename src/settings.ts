@@ -235,6 +235,18 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Keep screen on during long syncs")
+			.setDesc(
+				"On iOS a locked screen suspends Obsidian and freezes the sync. This holds the screen awake for syncs of 50 files or more; short syncs are unaffected.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.keepScreenOn).onChange((value) => {
+					this.plugin.settings.keepScreenOn = value;
+					this.plugin.queueSaveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
 			.setName("Reset sync state")
 			.setDesc("Next sync will be a full comparison")
 			.addButton((btn) =>
