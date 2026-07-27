@@ -8,7 +8,7 @@ Synchronize your Obsidian vault with Yandex Disk. Supports bidirectional sync, c
 - **Auto-sync** on file changes (create, edit, delete, rename)
 - **Cheap change detection** — a poll costs a single request, so short intervals are affordable
 - **Parallel transfers** — configurable, so large vaults finish in minutes instead of hours
-- **Progress you can see on mobile**, with a cancel button
+- **Progress you can see on mobile**, with a cancel button — shown only when a sync runs long enough to be worth reporting
 - **Resumable** — an interrupted sync picks up where it left off instead of starting over
 - **Conflict resolution** — choose per file: keep local, remote, or skip
 - **Push / Pull modes** — one-directional sync when needed
@@ -45,6 +45,7 @@ Synchronize your Obsidian vault with Yandex Disk. Supports bidirectional sync, c
 | Push all | Upload everything to Yandex Disk |
 | Pull all | Download everything from Yandex Disk |
 | Abort sync | Stop the current sync operation |
+| Show sync status | Bring the progress indicator back up |
 
 ## Settings
 
@@ -58,6 +59,7 @@ Synchronize your Obsidian vault with Yandex Disk. Supports bidirectional sync, c
 | Exclude patterns | Glob patterns to skip, one per line |
 | Max file size | Files above this size are not synced |
 | Parallel transfers | How many files to transfer at once (1–8) |
+| Show sync progress | When the progress indicator appears: only for long syncs (default), always, or never |
 | Keep screen on during long syncs | Prevents the screen locking mid-transfer on mobile |
 
 ## How sync works

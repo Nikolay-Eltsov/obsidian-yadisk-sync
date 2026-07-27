@@ -11,6 +11,16 @@ export enum ConflictStrategy {
 	Ask = "ask",
 }
 
+export enum ProgressDisplay {
+	/** Appear only once a sync has run long enough to be worth reporting. */
+	Delayed = "delayed",
+	Always = "always",
+	Never = "never",
+}
+
+/** How long a sync must run before the delayed indicator appears. */
+export const PROGRESS_DELAY_MS = 20000;
+
 export enum SyncAction {
 	UploadNew = "upload_new",
 	DownloadNew = "download_new",
@@ -38,6 +48,8 @@ export interface YaDiskSyncSettings {
 	concurrency: number;
 	/** Hold a screen wake lock for the duration of a large sync. */
 	keepScreenOn: boolean;
+	/** When the progress indicator is shown. */
+	progressDisplay: ProgressDisplay;
 }
 
 export const MIN_CONCURRENCY = 1;
@@ -65,6 +77,7 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	syncOnStartup: false,
 	concurrency: 4,
 	keepScreenOn: true,
+	progressDisplay: ProgressDisplay.Delayed,
 };
 
 /** Below this many files a sync is too short to be worth a wake lock. */

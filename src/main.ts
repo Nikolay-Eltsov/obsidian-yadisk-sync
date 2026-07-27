@@ -363,8 +363,8 @@ export default class YaDiskSyncPlugin extends Plugin {
 		const progress = new SyncProgress(() => {
 			engine.abort();
 			progress.message("Cancelling…");
-		});
-		progress.open();
+		}, this.settings.progressDisplay);
+		progress.start();
 		this.currentProgress = progress;
 
 		// Cleared up front, not at the end: the scan about to run covers every
@@ -470,15 +470,13 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.updateStatusBar("idle");
 
-		if (moved > 0) {
-			new Notice(`Sync complete. ${counts}`);
-			return;
-		}
+		// A manual tap always gets an answer: on mobile there is no status bar,
+		// so silence is indistinguishable from the sync never having run. An
+		// automatic sync that went fine says nothing — it runs all day, and
+		// announcing every successful one is just noise.
+		if (trigger !== "manual") return;
 
-		// A manual tap is reported even when nothing moved: on mobile there is no
-		// status bar, so silence is indistinguishable from the sync never having
-		// run. An automatic tick stays quiet — it fires all day.
-		if (trigger === "manual") new Notice("Sync complete. Already up to date");
+		new Notice(moved > 0 ? `Sync complete. ${counts}` : "Sync complete. Already up to date");
 	}
 
 	/** Re-shows the progress indicator after it was dismissed. */

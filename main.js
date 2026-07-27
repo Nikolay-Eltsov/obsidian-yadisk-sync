@@ -25,6 +25,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian6 = require("obsidian");
 
 // src/types.ts
+var PROGRESS_DELAY_MS = 2e4;
 var MIN_CONCURRENCY = 1;
 var MAX_CONCURRENCY = 8;
 var DEFAULT_SETTINGS = {
@@ -41,7 +42,8 @@ var DEFAULT_SETTINGS = {
   maxFileSizeMB: 50,
   syncOnStartup: false,
   concurrency: 4,
-  keepScreenOn: true
+  keepScreenOn: true,
+  progressDisplay: "delayed" /* Delayed */
 };
 var WAKE_LOCK_MIN_ITEMS = 50;
 var PERSISTED_STATE_VERSION = 2;
@@ -1462,36 +1464,29 @@ var SyncStateManager = class {
 var import_obsidian4 = require("obsidian");
 var RENDER_INTERVAL_MS = 250;
 var SyncProgress = class {
-  constructor(onCancel) {
+  constructor(onCancel, display = "delayed" /* Delayed */) {
     this.onCancel = onCancel;
+    this.display = display;
     this.notice = null;
     this.textEl = null;
+    this.appearTimer = null;
     this.label = "";
     this.lastRenderAt = 0;
     this.lastText = "Starting sync\u2026";
   }
-  open() {
-    if (this.notice)
+  start() {
+    if (this.display === "never" /* Never */)
       return;
-    const frag = createFragment((el) => {
-      const wrapper = el.createDiv({ cls: "yadisk-progress" });
-      this.textEl = wrapper.createDiv({
-        cls: "yadisk-progress-text",
-        text: "Starting sync\u2026"
-      });
-      const cancelBtn = wrapper.createEl("button", {
-        cls: "yadisk-progress-cancel",
-        text: "Cancel"
-      });
-      cancelBtn.addEventListener("click", (evt) => {
-        evt.preventDefault();
-        evt.stopPropagation();
-        this.onCancel();
-      });
-    });
-    this.notice = new import_obsidian4.Notice(frag, 0);
+    if (this.display === "always" /* Always */) {
+      this.show();
+      return;
+    }
+    this.appearTimer = window.setTimeout(() => {
+      this.appearTimer = null;
+      this.show();
+    }, PROGRESS_DELAY_MS);
   }
-  /** Starts a new phase and repaints immediately. */
+  /** Starts a new phase. Repaints if the indicator is already visible. */
   phase(label) {
     this.label = label;
     this.render(label);
@@ -1509,30 +1504,59 @@ var SyncProgress = class {
     this.render(text);
   }
   /**
-   * Brings the indicator back after it has been dismissed.
+   * Shows the indicator on request, whatever the setting says.
    *
-   * A Notice closes on any tap, and on mobile that is the only progress there
-   * is — without a way back the sync becomes invisible again.
+   * Used when the user asks what the sync is doing — either by tapping the
+   * ribbon mid-sync or through the command — including after dismissing the
+   * notice, which a tap anywhere on it does.
    */
   reopen() {
+    this.clearTimer();
     if (this.notice)
       this.notice.hide();
     this.notice = null;
     this.textEl = null;
-    this.open();
-    this.render(this.lastText);
+    this.show();
+  }
+  close() {
+    this.clearTimer();
+    if (this.notice)
+      this.notice.hide();
+    this.notice = null;
+    this.textEl = null;
+  }
+  show() {
+    if (this.notice)
+      return;
+    const frag = createFragment((el) => {
+      const wrapper = el.createDiv({ cls: "yadisk-progress" });
+      this.textEl = wrapper.createDiv({
+        cls: "yadisk-progress-text",
+        text: this.lastText
+      });
+      const cancelBtn = wrapper.createEl("button", {
+        cls: "yadisk-progress-cancel",
+        text: "Cancel"
+      });
+      cancelBtn.addEventListener("click", (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        this.onCancel();
+      });
+    });
+    this.notice = new import_obsidian4.Notice(frag, 0);
+  }
+  clearTimer() {
+    if (this.appearTimer !== null) {
+      window.clearTimeout(this.appearTimer);
+      this.appearTimer = null;
+    }
   }
   render(text) {
     this.lastRenderAt = Date.now();
     this.lastText = text;
     if (this.textEl)
       this.textEl.setText(text);
-  }
-  close() {
-    if (this.notice)
-      this.notice.hide();
-    this.notice = null;
-    this.textEl = null;
   }
 };
 
@@ -1683,6 +1707,14 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
     ).addSlider(
       (slider) => slider.setLimits(MIN_CONCURRENCY, MAX_CONCURRENCY, 1).setValue(this.plugin.settings.concurrency).setDynamicTooltip().onChange((value) => {
         this.plugin.settings.concurrency = value;
+        this.plugin.queueSaveSettings();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Show sync progress").setDesc(
+      'Most syncs carry a single edited note and are over in seconds. By default the indicator appears only once a sync has been running for 20 seconds, so a long one still shows it is working. Tapping the sync icon, or the "Show sync status" command, brings it up at any time.'
+    ).addDropdown(
+      (dd) => dd.addOption("delayed" /* Delayed */, "Only for long syncs").addOption("always" /* Always */, "Always").addOption("never" /* Never */, "Never").setValue(this.plugin.settings.progressDisplay).onChange((value) => {
+        this.plugin.settings.progressDisplay = value;
         this.plugin.queueSaveSettings();
       })
     );
@@ -1970,8 +2002,8 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     const progress = new SyncProgress(() => {
       engine.abort();
       progress.message("Cancelling\u2026");
-    });
-    progress.open();
+    }, this.settings.progressDisplay);
+    progress.start();
     this.currentProgress = progress;
     const hadPendingChanges = this.pendingLocalChange;
     this.pendingLocalChange = false;
@@ -2055,12 +2087,9 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       return;
     }
     this.updateStatusBar("idle");
-    if (moved > 0) {
-      new import_obsidian6.Notice(`Sync complete. ${counts}`);
+    if (trigger !== "manual")
       return;
-    }
-    if (trigger === "manual")
-      new import_obsidian6.Notice("Sync complete. Already up to date");
+    new import_obsidian6.Notice(moved > 0 ? `Sync complete. ${counts}` : "Sync complete. Already up to date");
   }
   /** Re-shows the progress indicator after it was dismissed. */
   showSyncStatus() {

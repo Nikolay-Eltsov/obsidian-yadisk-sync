@@ -5,6 +5,7 @@ import {
 	DEFAULT_SETTINGS,
 	MIN_CONCURRENCY,
 	MAX_CONCURRENCY,
+	ProgressDisplay,
 } from "./types";
 import type YaDiskSyncPlugin from "./main";
 
@@ -230,6 +231,23 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange((value) => {
 						this.plugin.settings.concurrency = value;
+						this.plugin.queueSaveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Show sync progress")
+			.setDesc(
+				"Most syncs carry a single edited note and are over in seconds. By default the indicator appears only once a sync has been running for 20 seconds, so a long one still shows it is working. Tapping the sync icon, or the \"Show sync status\" command, brings it up at any time.",
+			)
+			.addDropdown((dd) =>
+				dd
+					.addOption(ProgressDisplay.Delayed, "Only for long syncs")
+					.addOption(ProgressDisplay.Always, "Always")
+					.addOption(ProgressDisplay.Never, "Never")
+					.setValue(this.plugin.settings.progressDisplay)
+					.onChange((value) => {
+						this.plugin.settings.progressDisplay = value as ProgressDisplay;
 						this.plugin.queueSaveSettings();
 					}),
 			);
