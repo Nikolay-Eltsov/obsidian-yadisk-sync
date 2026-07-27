@@ -33,7 +33,12 @@ export interface YaDiskSyncSettings {
 	excludePatterns: string[];
 	maxFileSizeMB: number;
 	syncOnStartup: boolean;
+	/** How many transfers/listings may be in flight at once. */
+	concurrency: number;
 }
+
+export const MIN_CONCURRENCY = 1;
+export const MAX_CONCURRENCY = 8;
 
 export interface YaDiskTokenResponse {
 	access_token: string;
@@ -55,6 +60,7 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 	],
 	maxFileSizeMB: 50,
 	syncOnStartup: false,
+	concurrency: 4,
 };
 
 export interface FileRecord {
@@ -68,6 +74,22 @@ export interface SyncState {
 	lastSyncTime: number;
 	localSnapshot: Record<string, FileRecord>;
 	remoteSnapshot: Record<string, FileRecord>;
+}
+
+/**
+ * On-disk form of a {@link FileRecord}: `[mtime, size, md5]`.
+ * The path is already the map key, so repeating it in the value roughly
+ * doubles the size of a snapshot holding tens of thousands of files.
+ */
+export type PackedRecord = [number, number, string];
+
+export const PERSISTED_STATE_VERSION = 2;
+
+export interface PersistedSyncState {
+	version: number;
+	lastSyncTime: number;
+	local: Record<string, PackedRecord>;
+	remote: Record<string, PackedRecord>;
 }
 
 export interface SyncPlanItem {

@@ -1,6 +1,13 @@
 import { App, Modal, Setting } from "obsidian";
 import { SyncPlanItem, ConflictResolution } from "./types";
 
+/**
+ * Upper bound on individually rendered conflicts. Each one costs about ten DOM
+ * nodes, so a full first sync gone wrong would otherwise try to build tens of
+ * thousands of them and lock up the app.
+ */
+const MAX_RENDERED = 200;
+
 export class ConflictModal extends Modal {
 	private conflicts: SyncPlanItem[];
 	private resolutions: Map<string, "local" | "remote" | "skip">;
@@ -25,7 +32,10 @@ export class ConflictModal extends Modal {
 
 		const listEl = contentEl.createDiv({ cls: "conflict-list" });
 
-		for (const conflict of this.conflicts) {
+		const shown = this.conflicts.slice(0, MAX_RENDERED);
+		const hidden = this.conflicts.slice(MAX_RENDERED);
+
+		for (const conflict of shown) {
 			const item = listEl.createDiv({ cls: "yadisk-conflict-item" });
 
 			item.createDiv({ cls: "conflict-path", text: conflict.path });
@@ -69,6 +79,35 @@ export class ConflictModal extends Modal {
 				btn.addEventListener("click", () => {
 					this.resolutions.set(conflict.path, choice.value);
 					buttons.forEach((b) => b.removeClass("is-active"));
+					btn.addClass("is-active");
+				});
+			}
+		}
+
+		if (hidden.length > 0) {
+			const bulkEl = contentEl.createDiv({ cls: "yadisk-conflict-bulk" });
+			bulkEl.createDiv({
+				text: `${hidden.length} more conflicts are not listed. Choose what to do with them:`,
+			});
+
+			const bulkChoices: { label: string; value: "local" | "remote" | "skip" }[] = [
+				{ label: "All local", value: "local" },
+				{ label: "All remote", value: "remote" },
+				{ label: "Skip all", value: "skip" },
+			];
+
+			const bulkButtons: HTMLButtonElement[] = [];
+			const bulkRow = bulkEl.createDiv({ cls: "conflict-choice" });
+			for (const choice of bulkChoices) {
+				const btn = bulkRow.createEl("button", { text: choice.label });
+				bulkButtons.push(btn);
+				if (choice.value === "skip") btn.addClass("is-active");
+
+				btn.addEventListener("click", () => {
+					for (const conflict of hidden) {
+						this.resolutions.set(conflict.path, choice.value);
+					}
+					bulkButtons.forEach((b) => b.removeClass("is-active"));
 					btn.addClass("is-active");
 				});
 			}
