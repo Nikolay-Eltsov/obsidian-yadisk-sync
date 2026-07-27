@@ -257,7 +257,7 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 						this.plugin.stateManager.resetState();
 						void this.plugin.saveSettings();
 						btn.setButtonText("Done!");
-						activeWindow.setTimeout(() => { btn.setButtonText("Reset"); }, 2000);
+						window.setTimeout(() => { btn.setButtonText("Reset"); }, 2000);
 					}),
 			);
 	}

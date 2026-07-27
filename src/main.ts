@@ -47,7 +47,8 @@ const NO_REVISION_MIN_INTERVAL_MS = 60 * 1000;
 const FULL_SCAN_MAX_AGE_MS = 10 * 60 * 1000;
 
 interface PluginData {
-	settings?: Partial<YaDiskSyncSettings>;
+	/** `autoSyncInterval` is the pre-1.2 field: the interval in whole minutes. */
+	settings?: Partial<YaDiskSyncSettings> & { autoSyncInterval?: number };
 	state?: PersistedSyncState;
 	/** Pre-1.2 snapshot layout, migrated on load. */
 	syncState?: SyncState;
@@ -87,9 +88,11 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.settings.concurrency = clampConcurrency(this.settings.concurrency);
 
 		// The interval used to be expressed in minutes.
-		if (data?.settings?.autoSyncSeconds === undefined && this.settings.autoSyncInterval > 0) {
-			this.settings.autoSyncSeconds = this.settings.autoSyncInterval * 60;
+		const legacyMinutes = data?.settings?.autoSyncInterval;
+		if (data?.settings?.autoSyncSeconds === undefined && typeof legacyMinutes === "number") {
+			this.settings.autoSyncSeconds = Math.max(0, legacyMinutes) * 60;
 		}
+		delete (this.settings as { autoSyncInterval?: number }).autoSyncInterval;
 
 		this.client = new YandexDiskClient(
 			this.settings.accessToken,
@@ -160,7 +163,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
 
 		if (this.settings.syncOnStartup && this.settings.accessToken) {
-			activeWindow.setTimeout(() => { void this.runSync(undefined, "auto"); }, 3000);
+			window.setTimeout(() => { void this.runSync(undefined, "auto"); }, 3000);
 		}
 	}
 
@@ -169,7 +172,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 			window.clearInterval(this.autoSyncIntervalId);
 		}
 		if (this.debouncedSyncTimer !== null) {
-			activeWindow.clearTimeout(this.debouncedSyncTimer);
+			window.clearTimeout(this.debouncedSyncTimer);
 		}
 	}
 
@@ -179,9 +182,9 @@ export default class YaDiskSyncPlugin extends Plugin {
 		if (matchesExcludePattern(file.path, this.settings.excludePatterns)) return;
 
 		if (this.debouncedSyncTimer !== null) {
-			activeWindow.clearTimeout(this.debouncedSyncTimer);
+			window.clearTimeout(this.debouncedSyncTimer);
 		}
-		this.debouncedSyncTimer = activeWindow.setTimeout(() => {
+		this.debouncedSyncTimer = window.setTimeout(() => {
 			this.debouncedSyncTimer = null;
 			// Re-checked here too: the vault watcher can deliver the tail of a
 			// large sync's writes after the timer was already armed.

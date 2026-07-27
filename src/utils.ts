@@ -73,7 +73,7 @@ export async function runPool<T>(
 
 /** Yields to the event loop so long synchronous loops can repaint. */
 export function yieldToUi(): Promise<void> {
-	return new Promise((resolve) => activeWindow.setTimeout(resolve, 0));
+	return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
 export function debounce<T extends (...args: unknown[]) => void>(
@@ -82,8 +82,8 @@ export function debounce<T extends (...args: unknown[]) => void>(
 ): (...args: Parameters<T>) => void {
 	let timer: number | null = null;
 	return (...args: Parameters<T>) => {
-		if (timer) activeWindow.clearTimeout(timer);
-		timer = activeWindow.setTimeout(() => fn(...args), ms);
+		if (timer) window.clearTimeout(timer);
+		timer = window.setTimeout(() => fn(...args), ms);
 	};
 }
 

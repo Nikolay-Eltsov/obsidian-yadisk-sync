@@ -34,7 +34,6 @@ var DEFAULT_SETTINGS = {
   remotePath: "/ObsidianVault",
   syncDirection: "bidirectional" /* Bidirectional */,
   conflictStrategy: "newer_wins" /* NewerWins */,
-  autoSyncInterval: 0,
   autoSyncSeconds: 0,
   excludePatterns: [
     ".trash/**"
@@ -107,14 +106,14 @@ async function runPool(items, concurrency, worker, shouldStop) {
   await Promise.all(runners);
 }
 function yieldToUi() {
-  return new Promise((resolve) => activeWindow.setTimeout(resolve, 0));
+  return new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 function debounce(fn, ms) {
   let timer = null;
   return (...args) => {
     if (timer)
-      activeWindow.clearTimeout(timer);
-    timer = activeWindow.setTimeout(() => fn(...args), ms);
+      window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), ms);
   };
 }
 function minimatch(path, pattern) {
@@ -1646,7 +1645,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
         this.plugin.stateManager.resetState();
         void this.plugin.saveSettings();
         btn.setButtonText("Done!");
-        activeWindow.setTimeout(() => {
+        window.setTimeout(() => {
           btn.setButtonText("Reset");
         }, 2e3);
       })
@@ -1689,13 +1688,15 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     }, SETTINGS_SAVE_DELAY);
   }
   async onload() {
-    var _a2, _b2;
+    var _a2, _b2, _c;
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (_a2 = data == null ? void 0 : data.settings) != null ? _a2 : {});
     this.settings.concurrency = clampConcurrency(this.settings.concurrency);
-    if (((_b2 = data == null ? void 0 : data.settings) == null ? void 0 : _b2.autoSyncSeconds) === void 0 && this.settings.autoSyncInterval > 0) {
-      this.settings.autoSyncSeconds = this.settings.autoSyncInterval * 60;
+    const legacyMinutes = (_b2 = data == null ? void 0 : data.settings) == null ? void 0 : _b2.autoSyncInterval;
+    if (((_c = data == null ? void 0 : data.settings) == null ? void 0 : _c.autoSyncSeconds) === void 0 && typeof legacyMinutes === "number") {
+      this.settings.autoSyncSeconds = Math.max(0, legacyMinutes) * 60;
     }
+    delete this.settings.autoSyncInterval;
     this.client = new YandexDiskClient(
       this.settings.accessToken,
       this.settings.remotePath,
@@ -1751,7 +1752,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.registerEvent(this.app.vault.on("delete", (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on("rename", (file) => this.onFileChange(file)));
     if (this.settings.syncOnStartup && this.settings.accessToken) {
-      activeWindow.setTimeout(() => {
+      window.setTimeout(() => {
         void this.runSync(void 0, "auto");
       }, 3e3);
     }
@@ -1761,7 +1762,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       window.clearInterval(this.autoSyncIntervalId);
     }
     if (this.debouncedSyncTimer !== null) {
-      activeWindow.clearTimeout(this.debouncedSyncTimer);
+      window.clearTimeout(this.debouncedSyncTimer);
     }
   }
   onFileChange(file) {
@@ -1772,9 +1773,9 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     if (matchesExcludePattern(file.path, this.settings.excludePatterns))
       return;
     if (this.debouncedSyncTimer !== null) {
-      activeWindow.clearTimeout(this.debouncedSyncTimer);
+      window.clearTimeout(this.debouncedSyncTimer);
     }
-    this.debouncedSyncTimer = activeWindow.setTimeout(() => {
+    this.debouncedSyncTimer = window.setTimeout(() => {
       this.debouncedSyncTimer = null;
       if (this.isQuietPeriod())
         return;
