@@ -24,6 +24,8 @@ export interface SyncStats {
 	downloaded: number;
 	deleted: number;
 	errors: number;
+	/** Downloads abandoned because the local file changed mid-sync. */
+	skipped: number;
 	aborted: boolean;
 }
 
@@ -50,6 +52,12 @@ export interface SyncHooks {
 	 * for — on iOS a locked screen suspends the app and freezes the sync.
 	 */
 	onPlanReady?: (total: number) => void;
+	/**
+	 * Reports a vault path the sync itself wrote or removed. Lets the caller
+	 * tell its own writes apart from the user's edits, which arrive as the
+	 * same vault events.
+	 */
+	onFileWritten?: (path: string) => void;
 }
 
 export class SyncEngine {
@@ -73,7 +81,14 @@ export class SyncEngine {
 		this.lastCheckpointAt = Date.now();
 
 		const direction = directionOverride || this.settings.syncDirection;
-		const stats: SyncStats = { uploaded: 0, downloaded: 0, deleted: 0, errors: 0, aborted: false };
+		const stats: SyncStats = {
+			uploaded: 0,
+			downloaded: 0,
+			deleted: 0,
+			errors: 0,
+			skipped: 0,
+			aborted: false,
+		};
 		const reporter = hooks.reporter;
 
 		// Lets retry back-off inside the client wake up early on cancel.
@@ -204,7 +219,7 @@ export class SyncEngine {
 				this.settings.concurrency,
 				async (item) => {
 					try {
-						await this.executeItem(item, stats, localSnapshot, remoteSnapshot);
+						await this.executeItem(item, stats, localSnapshot, remoteSnapshot, hooks);
 					} catch (e) {
 						console.error(`[YaDisk Sync] Error processing ${item.path}:`, e);
 						stats.errors++;
@@ -233,6 +248,7 @@ export class SyncEngine {
 		stats: SyncStats,
 		localSnapshot: Record<string, FileRecord>,
 		remoteSnapshot: Record<string, FileRecord>,
+		hooks: SyncHooks,
 	): Promise<void> {
 		switch (item.action) {
 			case SyncAction.UploadNew:
@@ -255,7 +271,13 @@ export class SyncEngine {
 			}
 			case SyncAction.DownloadNew:
 			case SyncAction.DownloadModified: {
-				await this.executeDownload(item);
+				const written = await this.executeDownload(item, hooks);
+				if (!written) {
+					// Left for the next sync to weigh as a genuine conflict,
+					// rather than silently overwriting what was just typed.
+					stats.skipped++;
+					break;
+				}
 				stats.downloaded++;
 				const file = this.app.vault.getAbstractFileByPath(item.path);
 				if (item.remoteRecord && file instanceof TFile) {
@@ -276,7 +298,7 @@ export class SyncEngine {
 				delete localSnapshot[item.path];
 				break;
 			case SyncAction.DeleteLocal:
-				await this.executeDeleteLocal(item);
+				await this.executeDeleteLocal(item, hooks);
 				stats.deleted++;
 				delete localSnapshot[item.path];
 				delete remoteSnapshot[item.path];
@@ -521,9 +543,23 @@ export class SyncEngine {
 		await this.client.uploadFile(remotePath, data);
 	}
 
-	private async executeDownload(item: SyncPlanItem): Promise<void> {
+	/**
+	 * Returns false when the download was abandoned because the local file
+	 * moved on since the scan.
+	 *
+	 * A sync of a large vault runs for minutes, and the plan is built from a
+	 * snapshot taken at the start. Writing that plan out blindly would let a
+	 * download land on top of a note edited while it was queued.
+	 */
+	private async executeDownload(item: SyncPlanItem, hooks: SyncHooks): Promise<boolean> {
+		if (this.hasLocalFileChanged(item)) return false;
+
 		const remotePath = this.client.toRemotePath(item.path);
 		const data = await this.client.downloadFile(remotePath);
+
+		// Re-checked after the transfer: the download itself is the long part,
+		// and is exactly when an edit is likely to arrive.
+		if (this.hasLocalFileChanged(item)) return false;
 
 		const existingFile = this.app.vault.getAbstractFileByPath(item.path);
 		if (existingFile && existingFile instanceof TFile) {
@@ -535,6 +571,21 @@ export class SyncEngine {
 			}
 			await this.app.vault.createBinary(item.path, data);
 		}
+
+		if (hooks.onFileWritten) hooks.onFileWritten(item.path);
+		return true;
+	}
+
+	private hasLocalFileChanged(item: SyncPlanItem): boolean {
+		const file = this.app.vault.getAbstractFileByPath(item.path);
+
+		if (!item.localRecord) {
+			// The plan expected nothing here; anything present arrived since.
+			return file instanceof TFile;
+		}
+
+		if (!(file instanceof TFile)) return true;
+		return file.stat.mtime !== item.localRecord.mtime || file.stat.size !== item.localRecord.size;
 	}
 
 	private async executeDeleteRemote(item: SyncPlanItem): Promise<void> {
@@ -542,10 +593,11 @@ export class SyncEngine {
 		await this.client.deleteResource(remotePath);
 	}
 
-	private async executeDeleteLocal(item: SyncPlanItem): Promise<void> {
+	private async executeDeleteLocal(item: SyncPlanItem, hooks: SyncHooks): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(item.path);
 		if (file) {
 			await this.app.fileManager.trashFile(file);
+			if (hooks.onFileWritten) hooks.onFileWritten(item.path);
 		}
 	}
 

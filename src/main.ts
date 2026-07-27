@@ -19,11 +19,14 @@ import { debounce, matchesExcludePattern } from "./utils";
 const DEBOUNCE_DELAY = 5000;
 
 /**
- * How long after a sync to keep ignoring vault events. Every downloaded file
- * fires a create/modify event, and without this the tail of a large sync
- * schedules another full scan of both sides.
+ * How long a path stays marked as written by the sync itself. The vault
+ * watcher delivers the event slightly after the write; anything later than
+ * this is treated as a genuine edit.
  */
-const POST_SYNC_QUIET_MS = 10000;
+const SELF_WRITE_TTL_MS = 30000;
+
+/** Cap on tracked paths, above which expired entries are swept. */
+const SELF_WRITE_MAX_TRACKED = 2000;
 
 const SETTINGS_SAVE_DELAY = 400;
 
@@ -62,8 +65,11 @@ export default class YaDiskSyncPlugin extends Plugin {
 	private autoSyncIntervalId: number | null = null;
 	private syncInProgress = false;
 	private currentEngine: SyncEngine | null = null;
+	private currentProgress: SyncProgress | null = null;
 	private debouncedSyncTimer: number | null = null;
-	private lastSyncEndedAt = 0;
+	private selfWrittenPaths = new Map<string, number>();
+	/** A local edit is waiting to go up. Cleared once a sync carries it. */
+	private pendingLocalChange = false;
 	private lastRevision: number | null = null;
 	private revisionSupported = true;
 	private lastFullSyncAt = 0;
@@ -143,6 +149,12 @@ export default class YaDiskSyncPlugin extends Plugin {
 			callback: () => this.abortSync(),
 		});
 
+		this.addCommand({
+			id: "show-sync-status",
+			name: "Show sync status",
+			callback: () => this.showSyncStatus(),
+		});
+
 		this.statusBarEl = this.addStatusBarItem();
 		this.updateStatusBar("idle");
 
@@ -178,23 +190,54 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 	private onFileChange(file: TAbstractFile): void {
 		if (!this.settings.accessToken) return;
-		if (this.isQuietPeriod()) return;
 		if (matchesExcludePattern(file.path, this.settings.excludePatterns)) return;
+
+		// Every file the sync writes fires the same event a user edit does.
+		// Only our own writes are ignored — an edit made while a sync is
+		// running is a real change and must still be picked up.
+		if (this.consumeSelfWrite(file.path)) return;
+
+		this.scheduleDebouncedSync();
+	}
+
+	private scheduleDebouncedSync(): void {
+		this.pendingLocalChange = true;
 
 		if (this.debouncedSyncTimer !== null) {
 			window.clearTimeout(this.debouncedSyncTimer);
 		}
 		this.debouncedSyncTimer = window.setTimeout(() => {
 			this.debouncedSyncTimer = null;
-			// Re-checked here too: the vault watcher can deliver the tail of a
-			// large sync's writes after the timer was already armed.
-			if (this.isQuietPeriod()) return;
+			if (this.syncInProgress) {
+				// Do not drop these edits: wait for the current run to end and
+				// send them straight after.
+				this.scheduleDebouncedSync();
+				return;
+			}
 			void this.runSync(undefined, "auto");
 		}, DEBOUNCE_DELAY);
 	}
 
-	private isQuietPeriod(): boolean {
-		return this.syncInProgress || Date.now() - this.lastSyncEndedAt < POST_SYNC_QUIET_MS;
+	/** True if this path was just written by the sync rather than the user. */
+	private consumeSelfWrite(path: string): boolean {
+		const at = this.selfWrittenPaths.get(path);
+		if (at === undefined) return false;
+
+		this.selfWrittenPaths.delete(path);
+		// A stale entry means the vault event never arrived; treat a late edit
+		// to the same path as the user's.
+		return Date.now() - at < SELF_WRITE_TTL_MS;
+	}
+
+	private noteSelfWrite(path: string): void {
+		const now = Date.now();
+		this.selfWrittenPaths.set(path, now);
+
+		if (this.selfWrittenPaths.size > SELF_WRITE_MAX_TRACKED) {
+			for (const [key, at] of this.selfWrittenPaths) {
+				if (now - at >= SELF_WRITE_TTL_MS) this.selfWrittenPaths.delete(key);
+			}
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -238,10 +281,20 @@ export default class YaDiskSyncPlugin extends Plugin {
 	 */
 	private async autoSyncTick(): Promise<void> {
 		if (!this.settings.accessToken) return;
-		if (this.autoTickInFlight || this.syncInProgress || this.isQuietPeriod()) return;
+		// No quiet period is needed after a sync: the revision probe below was
+		// refreshed by that sync, so it will simply report nothing changed.
+		if (this.autoTickInFlight || this.syncInProgress) return;
 
 		this.autoTickInFlight = true;
 		try {
+			// The revision only ever reflects the remote side, so it can never
+			// report an edit made here. Without this a local change that the
+			// debounce missed would wait forever.
+			if (this.pendingLocalChange) {
+				await this.runSync(undefined, "auto");
+				return;
+			}
+
 			const sinceFullSync = Date.now() - this.lastFullSyncAt;
 			if (sinceFullSync >= AUTO_FULL_SYNC_MS) {
 				await this.runSync(undefined, "auto");
@@ -290,9 +343,9 @@ export default class YaDiskSyncPlugin extends Plugin {
 		remoteUnchangedHint?: boolean,
 	): Promise<void> {
 		if (this.syncInProgress) {
-			// Only a deliberate tap deserves an answer; an auto tick that lands
-			// mid-sync should pass in silence.
-			if (trigger === "manual") new Notice("Sync already in progress");
+			// Tapping sync during a sync means "show me what it is doing", so
+			// bring the indicator back rather than just saying it is busy.
+			if (trigger === "manual") this.showSyncStatus();
 			return;
 		}
 
@@ -312,6 +365,13 @@ export default class YaDiskSyncPlugin extends Plugin {
 			progress.message("Cancelling…");
 		});
 		progress.open();
+		this.currentProgress = progress;
+
+		// Cleared up front, not at the end: the scan about to run covers every
+		// edit made so far, while anything typed from here on raises the flag
+		// again and must be carried by the next run rather than swallowed.
+		const hadPendingChanges = this.pendingLocalChange;
+		this.pendingLocalChange = false;
 
 		try {
 			// A sync set off by a local edit should not pay for a walk of the
@@ -327,9 +387,14 @@ export default class YaDiskSyncPlugin extends Plugin {
 				onPlanReady: (total) => {
 					if (total >= WAKE_LOCK_MIN_ITEMS) void this.acquireWakeLock();
 				},
+				onFileWritten: (path) => this.noteSelfWrite(path),
 			});
 
 			await this.saveSettings();
+			if (stats.aborted || stats.errors > 0 || stats.skipped > 0) {
+				// Not everything got through; keep asking to be run again.
+				this.pendingLocalChange = this.pendingLocalChange || hadPendingChanges;
+			}
 			this.reportResult(stats, trigger);
 
 			this.lastFullSyncAt = Date.now();
@@ -347,11 +412,12 @@ export default class YaDiskSyncPlugin extends Plugin {
 			console.error("[YaDisk Sync] Sync error:", e);
 			new Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
 			this.updateStatusBar("error");
+			this.pendingLocalChange = this.pendingLocalChange || hadPendingChanges;
 		} finally {
 			progress.close();
+			this.currentProgress = null;
 			this.releaseWakeLock();
 			this.syncInProgress = false;
-			this.lastSyncEndedAt = Date.now();
 			this.currentEngine = null;
 		}
 	}
@@ -385,7 +451,10 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 	private reportResult(stats: SyncStats, trigger: "manual" | "auto"): void {
 		const moved = stats.uploaded + stats.downloaded + stats.deleted;
-		const counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
+		let counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
+		// Worth naming: these are files edited mid-sync whose download was held
+		// back rather than allowed to overwrite the edit.
+		if (stats.skipped > 0) counts += ` kept:${stats.skipped}`;
 
 		if (stats.aborted) {
 			new Notice(`Sync cancelled. ${counts}`);
@@ -410,6 +479,15 @@ export default class YaDiskSyncPlugin extends Plugin {
 		// status bar, so silence is indistinguishable from the sync never having
 		// run. An automatic tick stays quiet — it fires all day.
 		if (trigger === "manual") new Notice("Sync complete. Already up to date");
+	}
+
+	/** Re-shows the progress indicator after it was dismissed. */
+	private showSyncStatus(): void {
+		if (this.currentProgress) {
+			this.currentProgress.reopen();
+		} else {
+			new Notice("No sync is running");
+		}
 	}
 
 	private abortSync(): void {

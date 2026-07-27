@@ -19,6 +19,7 @@ export class SyncProgress {
 	private textEl: HTMLElement | null = null;
 	private label = "";
 	private lastRenderAt = 0;
+	private lastText = "Starting sync…";
 
 	constructor(private onCancel: () => void) {}
 
@@ -66,8 +67,23 @@ export class SyncProgress {
 		this.render(text);
 	}
 
+	/**
+	 * Brings the indicator back after it has been dismissed.
+	 *
+	 * A Notice closes on any tap, and on mobile that is the only progress there
+	 * is — without a way back the sync becomes invisible again.
+	 */
+	reopen(): void {
+		if (this.notice) this.notice.hide();
+		this.notice = null;
+		this.textEl = null;
+		this.open();
+		this.render(this.lastText);
+	}
+
 	private render(text: string): void {
 		this.lastRenderAt = Date.now();
+		this.lastText = text;
 		if (this.textEl) this.textEl.setText(text);
 	}
 

@@ -745,7 +745,14 @@ var SyncEngine = class {
     this.aborted = false;
     this.lastCheckpointAt = Date.now();
     const direction = directionOverride || this.settings.syncDirection;
-    const stats = { uploaded: 0, downloaded: 0, deleted: 0, errors: 0, aborted: false };
+    const stats = {
+      uploaded: 0,
+      downloaded: 0,
+      deleted: 0,
+      errors: 0,
+      skipped: 0,
+      aborted: false
+    };
     const reporter = hooks.reporter;
     this.client.setAbortCheck(() => this.aborted);
     try {
@@ -851,7 +858,7 @@ var SyncEngine = class {
         this.settings.concurrency,
         async (item) => {
           try {
-            await this.executeItem(item, stats, localSnapshot, remoteSnapshot);
+            await this.executeItem(item, stats, localSnapshot, remoteSnapshot, hooks);
           } catch (e) {
             console.error(`[YaDisk Sync] Error processing ${item.path}:`, e);
             stats.errors++;
@@ -873,7 +880,7 @@ var SyncEngine = class {
    * snapshots, so the sync does not need a second full scan of both sides
    * just to learn what it already did.
    */
-  async executeItem(item, stats, localSnapshot, remoteSnapshot) {
+  async executeItem(item, stats, localSnapshot, remoteSnapshot, hooks) {
     switch (item.action) {
       case "upload_new" /* UploadNew */:
       case "upload_modified" /* UploadModified */: {
@@ -895,7 +902,11 @@ var SyncEngine = class {
       }
       case "download_new" /* DownloadNew */:
       case "download_modified" /* DownloadModified */: {
-        await this.executeDownload(item);
+        const written = await this.executeDownload(item, hooks);
+        if (!written) {
+          stats.skipped++;
+          break;
+        }
         stats.downloaded++;
         const file = this.app.vault.getAbstractFileByPath(item.path);
         if (item.remoteRecord && file instanceof import_obsidian3.TFile) {
@@ -916,7 +927,7 @@ var SyncEngine = class {
         delete localSnapshot[item.path];
         break;
       case "delete_local" /* DeleteLocal */:
-        await this.executeDeleteLocal(item);
+        await this.executeDeleteLocal(item, hooks);
         stats.deleted++;
         delete localSnapshot[item.path];
         delete remoteSnapshot[item.path];
@@ -1115,9 +1126,21 @@ var SyncEngine = class {
     const remotePath = this.client.toRemotePath(item.path);
     await this.client.uploadFile(remotePath, data);
   }
-  async executeDownload(item) {
+  /**
+   * Returns false when the download was abandoned because the local file
+   * moved on since the scan.
+   *
+   * A sync of a large vault runs for minutes, and the plan is built from a
+   * snapshot taken at the start. Writing that plan out blindly would let a
+   * download land on top of a note edited while it was queued.
+   */
+  async executeDownload(item, hooks) {
+    if (this.hasLocalFileChanged(item))
+      return false;
     const remotePath = this.client.toRemotePath(item.path);
     const data = await this.client.downloadFile(remotePath);
+    if (this.hasLocalFileChanged(item))
+      return false;
     const existingFile = this.app.vault.getAbstractFileByPath(item.path);
     if (existingFile && existingFile instanceof import_obsidian3.TFile) {
       await this.app.vault.modifyBinary(existingFile, data);
@@ -1128,15 +1151,29 @@ var SyncEngine = class {
       }
       await this.app.vault.createBinary(item.path, data);
     }
+    if (hooks.onFileWritten)
+      hooks.onFileWritten(item.path);
+    return true;
+  }
+  hasLocalFileChanged(item) {
+    const file = this.app.vault.getAbstractFileByPath(item.path);
+    if (!item.localRecord) {
+      return file instanceof import_obsidian3.TFile;
+    }
+    if (!(file instanceof import_obsidian3.TFile))
+      return true;
+    return file.stat.mtime !== item.localRecord.mtime || file.stat.size !== item.localRecord.size;
   }
   async executeDeleteRemote(item) {
     const remotePath = this.client.toRemotePath(item.path);
     await this.client.deleteResource(remotePath);
   }
-  async executeDeleteLocal(item) {
+  async executeDeleteLocal(item, hooks) {
     const file = this.app.vault.getAbstractFileByPath(item.path);
     if (file) {
       await this.app.fileManager.trashFile(file);
+      if (hooks.onFileWritten)
+        hooks.onFileWritten(item.path);
     }
   }
   async ensureLocalFolder(folderPath) {
@@ -1430,6 +1467,7 @@ var SyncProgress = class {
     this.textEl = null;
     this.label = "";
     this.lastRenderAt = 0;
+    this.lastText = "Starting sync\u2026";
   }
   open() {
     if (this.notice)
@@ -1469,8 +1507,23 @@ var SyncProgress = class {
   message(text) {
     this.render(text);
   }
+  /**
+   * Brings the indicator back after it has been dismissed.
+   *
+   * A Notice closes on any tap, and on mobile that is the only progress there
+   * is — without a way back the sync becomes invisible again.
+   */
+  reopen() {
+    if (this.notice)
+      this.notice.hide();
+    this.notice = null;
+    this.textEl = null;
+    this.open();
+    this.render(this.lastText);
+  }
   render(text) {
     this.lastRenderAt = Date.now();
+    this.lastText = text;
     if (this.textEl)
       this.textEl.setText(text);
   }
@@ -1655,7 +1708,8 @@ var YaDiskSyncSettingTab = class extends import_obsidian5.PluginSettingTab {
 
 // src/main.ts
 var DEBOUNCE_DELAY = 5e3;
-var POST_SYNC_QUIET_MS = 1e4;
+var SELF_WRITE_TTL_MS = 3e4;
+var SELF_WRITE_MAX_TRACKED = 2e3;
 var SETTINGS_SAVE_DELAY = 400;
 var AUTO_FULL_SYNC_MS = 10 * 60 * 1e3;
 var NO_REVISION_MIN_INTERVAL_MS = 60 * 1e3;
@@ -1670,8 +1724,11 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     this.autoSyncIntervalId = null;
     this.syncInProgress = false;
     this.currentEngine = null;
+    this.currentProgress = null;
     this.debouncedSyncTimer = null;
-    this.lastSyncEndedAt = 0;
+    this.selfWrittenPaths = /* @__PURE__ */ new Map();
+    /** A local edit is waiting to go up. Cleared once a sync carries it. */
+    this.pendingLocalChange = false;
     this.lastRevision = null;
     this.revisionSupported = true;
     this.lastFullSyncAt = 0;
@@ -1737,6 +1794,11 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       name: "Abort sync",
       callback: () => this.abortSync()
     });
+    this.addCommand({
+      id: "show-sync-status",
+      name: "Show sync status",
+      callback: () => this.showSyncStatus()
+    });
     this.statusBarEl = this.addStatusBarItem();
     this.updateStatusBar("idle");
     this.setupAutoSync();
@@ -1768,22 +1830,43 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
   onFileChange(file) {
     if (!this.settings.accessToken)
       return;
-    if (this.isQuietPeriod())
-      return;
     if (matchesExcludePattern(file.path, this.settings.excludePatterns))
       return;
+    if (this.consumeSelfWrite(file.path))
+      return;
+    this.scheduleDebouncedSync();
+  }
+  scheduleDebouncedSync() {
+    this.pendingLocalChange = true;
     if (this.debouncedSyncTimer !== null) {
       window.clearTimeout(this.debouncedSyncTimer);
     }
     this.debouncedSyncTimer = window.setTimeout(() => {
       this.debouncedSyncTimer = null;
-      if (this.isQuietPeriod())
+      if (this.syncInProgress) {
+        this.scheduleDebouncedSync();
         return;
+      }
       void this.runSync(void 0, "auto");
     }, DEBOUNCE_DELAY);
   }
-  isQuietPeriod() {
-    return this.syncInProgress || Date.now() - this.lastSyncEndedAt < POST_SYNC_QUIET_MS;
+  /** True if this path was just written by the sync rather than the user. */
+  consumeSelfWrite(path) {
+    const at = this.selfWrittenPaths.get(path);
+    if (at === void 0)
+      return false;
+    this.selfWrittenPaths.delete(path);
+    return Date.now() - at < SELF_WRITE_TTL_MS;
+  }
+  noteSelfWrite(path) {
+    const now = Date.now();
+    this.selfWrittenPaths.set(path, now);
+    if (this.selfWrittenPaths.size > SELF_WRITE_MAX_TRACKED) {
+      for (const [key, at] of this.selfWrittenPaths) {
+        if (now - at >= SELF_WRITE_TTL_MS)
+          this.selfWrittenPaths.delete(key);
+      }
+    }
   }
   async saveSettings() {
     const stateData = this.stateManager ? this.stateManager.getDataToSave() : {};
@@ -1825,10 +1908,14 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
   async autoSyncTick() {
     if (!this.settings.accessToken)
       return;
-    if (this.autoTickInFlight || this.syncInProgress || this.isQuietPeriod())
+    if (this.autoTickInFlight || this.syncInProgress)
       return;
     this.autoTickInFlight = true;
     try {
+      if (this.pendingLocalChange) {
+        await this.runSync(void 0, "auto");
+        return;
+      }
       const sinceFullSync = Date.now() - this.lastFullSyncAt;
       if (sinceFullSync >= AUTO_FULL_SYNC_MS) {
         await this.runSync(void 0, "auto");
@@ -1868,7 +1955,7 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
   async runSync(directionOverride, trigger = "manual", remoteUnchangedHint) {
     if (this.syncInProgress) {
       if (trigger === "manual")
-        new import_obsidian6.Notice("Sync already in progress");
+        this.showSyncStatus();
       return;
     }
     if (!this.settings.accessToken) {
@@ -1884,6 +1971,9 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       progress.message("Cancelling\u2026");
     });
     progress.open();
+    this.currentProgress = progress;
+    const hadPendingChanges = this.pendingLocalChange;
+    this.pendingLocalChange = false;
     try {
       const remoteUnchanged = remoteUnchangedHint != null ? remoteUnchangedHint : await this.probeRemote() === "unchanged";
       const stats = await engine.run(directionOverride, {
@@ -1893,9 +1983,13 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
         onPlanReady: (total) => {
           if (total >= WAKE_LOCK_MIN_ITEMS)
             void this.acquireWakeLock();
-        }
+        },
+        onFileWritten: (path) => this.noteSelfWrite(path)
       });
       await this.saveSettings();
+      if (stats.aborted || stats.errors > 0 || stats.skipped > 0) {
+        this.pendingLocalChange = this.pendingLocalChange || hadPendingChanges;
+      }
       this.reportResult(stats, trigger);
       this.lastFullSyncAt = Date.now();
       if (!remoteUnchanged && !stats.aborted)
@@ -1910,11 +2004,12 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
       console.error("[YaDisk Sync] Sync error:", e);
       new import_obsidian6.Notice(`Sync error: ${e instanceof Error ? e.message : String(e)}`);
       this.updateStatusBar("error");
+      this.pendingLocalChange = this.pendingLocalChange || hadPendingChanges;
     } finally {
       progress.close();
+      this.currentProgress = null;
       this.releaseWakeLock();
       this.syncInProgress = false;
-      this.lastSyncEndedAt = Date.now();
       this.currentEngine = null;
     }
   }
@@ -1945,7 +2040,9 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
   }
   reportResult(stats, trigger) {
     const moved = stats.uploaded + stats.downloaded + stats.deleted;
-    const counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
+    let counts = `up:${stats.uploaded} down:${stats.downloaded} del:${stats.deleted}`;
+    if (stats.skipped > 0)
+      counts += ` kept:${stats.skipped}`;
     if (stats.aborted) {
       new import_obsidian6.Notice(`Sync cancelled. ${counts}`);
       this.updateStatusBar("idle");
@@ -1963,6 +2060,14 @@ var YaDiskSyncPlugin = class extends import_obsidian6.Plugin {
     }
     if (trigger === "manual")
       new import_obsidian6.Notice("Sync complete. Already up to date");
+  }
+  /** Re-shows the progress indicator after it was dismissed. */
+  showSyncStatus() {
+    if (this.currentProgress) {
+      this.currentProgress.reopen();
+    } else {
+      new import_obsidian6.Notice("No sync is running");
+    }
   }
   abortSync() {
     if (this.currentEngine) {
