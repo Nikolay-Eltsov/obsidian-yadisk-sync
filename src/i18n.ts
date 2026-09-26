@@ -1,4 +1,4 @@
-import { getLanguage, moment } from "obsidian";
+import { getLanguage, moment, requireApiVersion } from "obsidian";
 import { Language } from "./types";
 
 const en = {
@@ -464,8 +464,9 @@ let current: Exclude<Language, Language.Auto> = Language.English;
 
 function obsidianLanguage(): string {
 	// getLanguage() arrived in Obsidian 1.8.7; before it, the app set
-	// moment's locale to its own language.
-	return typeof getLanguage === "function" ? getLanguage() : moment.locale();
+	// moment's locale to its own language. The check is by version rather
+	// than typeof so the plugin review's API check can see the guard.
+	return requireApiVersion("1.8.7") ? getLanguage() : moment.locale();
 }
 
 export function setLanguage(language: Language): void {

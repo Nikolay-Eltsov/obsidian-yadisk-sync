@@ -470,7 +470,7 @@ var ru = {
 var dictionaries = { en, ru };
 var current = "en" /* English */;
 function obsidianLanguage() {
-  return typeof import_obsidian.getLanguage === "function" ? (0, import_obsidian.getLanguage)() : import_obsidian.moment.locale();
+  return (0, import_obsidian.requireApiVersion)("1.8.7") ? (0, import_obsidian.getLanguage)() : import_obsidian.moment.locale();
 }
 function setLanguage(language) {
   const code = language === "auto" /* Auto */ ? obsidianLanguage() : language;
