@@ -1,6 +1,7 @@
 import { requestUrl, RequestUrlParam, RequestUrlResponse } from "obsidian";
+import { t } from "./i18n";
 import { YaDiskResource, YaDiskDiskInfo, YaDiskLink, YaDiskTokenResponse, FileRecord } from "./types";
-import { normalizePath, isoToTimestamp, Semaphore } from "./utils";
+import { normalizePath, normalizeRemotePath, isoToTimestamp, Semaphore } from "./utils";
 import { getClientId, getClientSecret } from "./credentials";
 
 const API_BASE = "https://cloud-api.yandex.net/v1/disk";
@@ -19,6 +20,9 @@ const LIST_LIMIT = 1000;
  * one of the listed items.
  */
 const LIST_FIELDS = [
+	// The listed resource's own type: a remote path that turns out to be a
+	// file must not pass for an empty folder.
+	"type",
 	"_embedded.total",
 	"_embedded.items.path",
 	"_embedded.items.type",
@@ -38,6 +42,21 @@ export class YaDiskApiError extends Error {
 		super(`Yandex Disk API error: ${status} ${body || "Unknown error"}`);
 		this.name = "YaDiskApiError";
 	}
+}
+
+/** A failure in a line a person can read: the API's own description, not its raw body. */
+export function describeError(e: unknown): string {
+	if (e instanceof YaDiskApiError) {
+		try {
+			const body = JSON.parse(e.body) as { description?: string; message?: string; error?: string };
+			const detail = body.description || body.message || body.error;
+			if (detail) return `${e.status} ${detail}`;
+		} catch {
+			// Not JSON; the status alone will have to do.
+		}
+		return `HTTP ${e.status}`;
+	}
+	return e instanceof Error ? e.message : String(e);
 }
 
 export interface ScanProgress {
@@ -82,7 +101,7 @@ export class YandexDiskClient {
 	) {
 		// Normalized up front so a later setRemotePath with the same logical
 		// path is a no-op and does not drop the folder cache mid-sync.
-		this.remotePath = normalizePath(remotePath);
+		this.remotePath = normalizeRemotePath(remotePath);
 	}
 
 	setToken(token: string): void {
@@ -95,7 +114,7 @@ export class YandexDiskClient {
 	}
 
 	setRemotePath(remotePath: string): void {
-		const next = normalizePath(remotePath);
+		const next = normalizeRemotePath(remotePath);
 		if (next !== this.remotePath) this.knownFolders.clear();
 		this.remotePath = next;
 	}
@@ -141,7 +160,7 @@ export class YandexDiskClient {
 
 		if (resp.status !== 200) {
 			const err = resp.json as { error_description?: string; error?: string } | undefined;
-			throw new Error(err?.error_description || err?.error || `OAuth error: ${resp.status}`);
+			throw new Error(err?.error_description || err?.error || t("error.oauth", { status: resp.status }));
 		}
 
 		const data = resp.json as YaDiskTokenResponse;
@@ -158,7 +177,7 @@ export class YandexDiskClient {
 
 	async refreshAccessToken(): Promise<YaDiskTokenResponse> {
 		if (!this.refreshTokenValue) {
-			throw new Error("No refresh token available. Please re-authorize.");
+			throw new Error(t("error.noRefreshToken"));
 		}
 
 		const body = new URLSearchParams({
@@ -178,7 +197,7 @@ export class YandexDiskClient {
 
 		if (resp.status !== 200) {
 			const err = resp.json as { error_description?: string; error?: string } | undefined;
-			throw new Error(err?.error_description || err?.error || `Token refresh error: ${resp.status}`);
+			throw new Error(err?.error_description || err?.error || t("error.tokenRefresh", { status: resp.status }));
 		}
 
 		const data = resp.json as YaDiskTokenResponse;
@@ -289,7 +308,7 @@ export class YandexDiskClient {
 			throw new YaDiskApiError(response.status, response.text);
 		}
 
-		throw new Error("Max retries exceeded");
+		throw new Error(t("error.maxRetries"));
 	}
 
 	/**
@@ -321,7 +340,7 @@ export class YandexDiskClient {
 			throw new YaDiskApiError(response.status, response.text);
 		}
 
-		throw new Error("Max retries exceeded");
+		throw new Error(t("error.maxRetries"));
 	}
 
 	async getDiskInfo(): Promise<YaDiskDiskInfo> {
@@ -363,7 +382,8 @@ export class YandexDiskClient {
 	}
 
 	/**
-	 * Walks the remote tree under `folderPath`.
+	 * Walks the remote tree under `folderPath`. Null means there is no folder
+	 * there — none yet, or a file in its place.
 	 *
 	 * Directories are listed concurrently: a depth-first walk that awaits every
 	 * child in turn spends the entire scan waiting on one round trip at a time,
@@ -373,10 +393,14 @@ export class YandexDiskClient {
 		folderPath: string,
 		concurrency = 4,
 		onProgress?: ScanProgress,
-	): Promise<FileRecord[]> {
+	): Promise<FileRecord[] | null> {
 		const records: FileRecord[] = [];
 		const semaphore = new Semaphore(Math.max(1, concurrency));
 		let dirsDone = 0;
+		// The first answer is always the root's: subfolders are only listed
+		// once every page of their parent is in.
+		let rootListed = false;
+		let rootIsFile = false;
 
 		const listDir = async (dirPath: string): Promise<void> => {
 			const subdirs: string[] = [];
@@ -394,6 +418,13 @@ export class YandexDiskClient {
 						offset,
 						fields: LIST_FIELDS,
 					});
+					if (!rootListed) {
+						rootListed = true;
+						if (resource.type === "file") {
+							rootIsFile = true;
+							return;
+						}
+					}
 					const embedded = resource._embedded;
 					if (!embedded) break;
 
@@ -444,13 +475,18 @@ export class YandexDiskClient {
 			await listDir(folderPath);
 		} catch (e) {
 			if (e instanceof YaDiskApiError && e.status === 404) {
-				// Remote root does not exist yet; leave it out of the folder
-				// cache so the first upload actually creates it.
-				return [];
+				// Before the root answered, this is the root itself missing;
+				// it stays out of the folder cache so the first upload
+				// actually creates it. After, a folder went away mid-walk:
+				// the listing is incomplete, and passed off as complete
+				// everything under that folder would read as deleted.
+				if (!rootListed) return null;
+				throw new Error("A folder on Yandex Disk changed during the scan. The sync will retry.");
 			}
 			throw e;
 		}
 
+		if (rootIsFile) return null;
 		this.knownFolders.add(normalizePath(folderPath));
 		return records;
 	}

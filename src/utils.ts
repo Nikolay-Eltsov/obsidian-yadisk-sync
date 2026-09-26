@@ -2,6 +2,18 @@ export function normalizePath(p: string): string {
 	return p.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
 }
 
+/**
+ * A remote folder in the form Yandex Disk reports paths under it: from the
+ * root, with no trailing slash. Listings always come back rooted
+ * ("disk:/obs/..."), so a folder entered as "obs/..." never matched them —
+ * every file got the folder prefix in its local path, and every download
+ * asked for a path that does not exist.
+ */
+export function normalizeRemotePath(p: string): string {
+	const path = normalizePath(p.trim().replace(/^disk:/, ""));
+	return path.startsWith("/") ? path : `/${path}`;
+}
+
 export function isoToTimestamp(iso: string): number {
 	return new Date(iso).getTime();
 }
@@ -44,12 +56,17 @@ export class Semaphore {
  * Runs `worker` over `items` with at most `concurrency` calls in flight.
  * Workers pull from a shared cursor, so slow items do not stall the others.
  * Individual failures are the worker's business; they are not caught here.
+ *
+ * `priority` is asked before every item and may hand back a task to run
+ * first: work that turned up after the pool started and should not wait
+ * behind the rest of it.
  */
 export async function runPool<T>(
 	items: T[],
 	concurrency: number,
 	worker: (item: T) => Promise<void>,
 	shouldStop?: () => boolean,
+	priority?: () => (() => Promise<void>) | undefined,
 ): Promise<void> {
 	let cursor = 0;
 	const size = Math.max(1, Math.min(concurrency, items.length));
@@ -60,6 +77,11 @@ export async function runPool<T>(
 			(async () => {
 				for (;;) {
 					if (shouldStop && shouldStop()) return;
+					const urgent = priority?.();
+					if (urgent) {
+						await urgent();
+						continue;
+					}
 					const index = cursor++;
 					if (index >= items.length) return;
 					await worker(items[index]);
@@ -69,6 +91,28 @@ export async function runPool<T>(
 	}
 
 	await Promise.all(runners);
+}
+
+/**
+ * Settles with the promise's value, or with null if it fails or `ms` pass
+ * first. The call itself carries on; only the waiting stops — which is the
+ * point on a drive that is going away, where a read can hang rather than
+ * fail.
+ */
+export function resolveWithin<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+	return new Promise((resolve) => {
+		const timer = window.setTimeout(() => resolve(null), ms);
+		promise.then(
+			(value) => {
+				window.clearTimeout(timer);
+				resolve(value);
+			},
+			() => {
+				window.clearTimeout(timer);
+				resolve(null);
+			},
+		);
+	});
 }
 
 /** Yields to the event loop so long synchronous loops can repaint. */

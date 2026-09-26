@@ -1,4 +1,5 @@
 import { Notice } from "obsidian";
+import { t } from "./i18n";
 import { ProgressDisplay, PROGRESS_DELAY_MS } from "./types";
 
 /**
@@ -23,14 +24,19 @@ const RENDER_INTERVAL_MS = 250;
 export class SyncProgress {
 	private notice: Notice | null = null;
 	private textEl: HTMLElement | null = null;
+	private errorEl: HTMLElement | null = null;
 	private appearTimer: number | null = null;
 	private label = "";
 	private lastRenderAt = 0;
-	private lastText = "Starting sync…";
+	private lastText = t("progress.starting");
+	private failed = 0;
+	private lastFailure = "";
 
 	constructor(
 		private onCancel: () => void,
 		private display: ProgressDisplay = ProgressDisplay.Delayed,
+		/** Told every line the indicator would show, shown or not. */
+		private onUpdate?: (text: string, lastFailure: string) => void,
 	) {}
 
 	start(): void {
@@ -56,9 +62,17 @@ export class SyncProgress {
 	/** Per-item update. Cheap to call in a tight loop. */
 	tick(current: number, total?: number): void {
 		if (Date.now() - this.lastRenderAt < RENDER_INTERVAL_MS) return;
-		this.render(
-			total !== undefined ? `${this.label} ${current}/${total}` : `${this.label} ${current}`,
-		);
+		const count = total !== undefined ? `${current}/${total}` : `${current}`;
+		// Failed items move the counter too; said alongside it, so a run of
+		// failures does not pass for progress.
+		const failed = this.failed > 0 ? ` · ${t("progress.failed", { count: this.failed })}` : "";
+		this.render(`${this.label} ${count}${failed}`);
+	}
+
+	/** Records a failure; it shows with the next update. */
+	failure(failed: number, path: string, message: string): void {
+		this.failed = failed;
+		this.lastFailure = t("progress.lastError", { path, message });
 	}
 
 	/** Replaces the whole line, ignoring the throttle. */
@@ -78,6 +92,7 @@ export class SyncProgress {
 		if (this.notice) this.notice.hide();
 		this.notice = null;
 		this.textEl = null;
+		this.errorEl = null;
 		this.show();
 	}
 
@@ -86,6 +101,7 @@ export class SyncProgress {
 		if (this.notice) this.notice.hide();
 		this.notice = null;
 		this.textEl = null;
+		this.errorEl = null;
 	}
 
 	private show(): void {
@@ -93,13 +109,19 @@ export class SyncProgress {
 
 		const frag = createFragment((el) => {
 			const wrapper = el.createDiv({ cls: "yadisk-progress" });
-			this.textEl = wrapper.createDiv({
+			const body = wrapper.createDiv({ cls: "yadisk-progress-body" });
+			this.textEl = body.createDiv({
 				cls: "yadisk-progress-text",
 				text: this.lastText,
 			});
+			this.errorEl = body.createDiv({
+				cls: "yadisk-progress-error",
+				text: this.lastFailure,
+			});
+			this.errorEl.toggle(this.lastFailure !== "");
 			const cancelBtn = wrapper.createEl("button", {
 				cls: "yadisk-progress-cancel",
-				text: "Cancel",
+				text: t("queue.cancel"),
 			});
 			cancelBtn.addEventListener("click", (evt) => {
 				// Clicking anywhere on a Notice dismisses it; keep it up so the
@@ -125,6 +147,11 @@ export class SyncProgress {
 		// Recorded even while hidden, so a late-appearing indicator opens on the
 		// current state rather than on "Starting sync…".
 		this.lastText = text;
+		this.onUpdate?.(text, this.lastFailure);
 		if (this.textEl) this.textEl.setText(text);
+		if (this.errorEl) {
+			this.errorEl.setText(this.lastFailure);
+			this.errorEl.toggle(this.lastFailure !== "");
+		}
 	}
 }

@@ -81,9 +81,21 @@
 	gap: 12px;
 }
 
+.yadisk-progress .yadisk-progress-body {
+	flex: 1;
+	min-width: 0;
+}
+
 .yadisk-progress .yadisk-progress-text {
 	flex: 1;
 	min-width: 0;
+	word-break: break-word;
+}
+
+.yadisk-progress .yadisk-progress-error {
+	margin-top: 4px;
+	font-size: 0.85em;
+	color: var(--text-error);
 	word-break: break-word;
 }
 
@@ -125,4 +137,276 @@
 
 .yadisk-textarea-wide {
 	width: 100%;
+}
+
+.yadisk-pause-modal {
+	max-height: 70vh;
+	overflow-y: auto;
+}
+
+.yadisk-pause-modal .yadisk-pause-list {
+	max-height: 40vh;
+	overflow-y: auto;
+	margin-bottom: 12px;
+	padding: 8px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-family: var(--font-monospace);
+	font-size: 0.85em;
+	word-break: break-all;
+}
+
+.yadisk-pause-modal .yadisk-pause-more {
+	margin-top: 4px;
+	color: var(--text-muted);
+}
+
+.yadisk-pause-notice {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.yadisk-pause-notice .yadisk-pause-notice-text {
+	flex: 1;
+	min-width: 0;
+	word-break: break-word;
+}
+
+.yadisk-pause-notice button {
+	flex: 0 0 auto;
+}
+
+.yadisk-queue {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.yadisk-queue-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.yadisk-queue-status {
+	font-weight: 600;
+}
+
+.yadisk-queue-section-title {
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin-bottom: 6px;
+}
+
+.yadisk-queue-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.yadisk-queue-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 3px 6px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+}
+
+.yadisk-queue-row.is-active {
+	background-color: var(--background-modifier-hover);
+}
+
+.yadisk-queue-row.is-pending {
+	color: var(--text-muted);
+}
+
+.yadisk-queue-icon {
+	display: flex;
+	flex-shrink: 0;
+	padding-top: 2px;
+	color: var(--text-muted);
+}
+
+.yadisk-queue-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.yadisk-queue-row.is-active .yadisk-queue-icon {
+	color: var(--interactive-accent);
+}
+
+.yadisk-queue-row.is-failed .yadisk-queue-icon,
+.yadisk-queue-error {
+	color: var(--text-error);
+}
+
+.yadisk-queue-body {
+	flex: 1;
+	min-width: 0;
+}
+
+.yadisk-queue-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.yadisk-queue-detail {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.yadisk-queue-summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	list-style: none;
+}
+
+.yadisk-queue-summary::-webkit-details-marker {
+	display: none;
+}
+
+.yadisk-queue-summary:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.yadisk-queue-summary::before {
+	content: "›";
+	width: 8px;
+	color: var(--text-faint);
+	transition: transform 100ms ease-in-out;
+}
+
+.yadisk-queue-collapsible[open] > .yadisk-queue-summary::before {
+	transform: rotate(90deg);
+}
+
+.yadisk-queue-group-summary {
+	padding: 4px 6px;
+}
+
+.yadisk-queue-section > .yadisk-queue-summary .yadisk-queue-section-title {
+	margin-bottom: 0;
+}
+
+.yadisk-queue-section[open] > .yadisk-queue-summary {
+	margin-bottom: 6px;
+}
+
+.yadisk-queue-group-label {
+	flex: 1;
+}
+
+.yadisk-queue-group-count {
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.yadisk-queue-group > .yadisk-queue-list {
+	padding-left: 16px;
+}
+
+.yadisk-queue-detail,
+.yadisk-queue-error,
+.yadisk-queue-more,
+.yadisk-queue-note {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.yadisk-queue-error {
+	color: var(--text-error);
+}
+
+.yadisk-remaining {
+	display: inline-flex;
+	flex-wrap: wrap;
+	font-weight: normal;
+	align-items: center;
+	gap: 10px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.yadisk-remaining-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+}
+
+.yadisk-remaining-icon {
+	display: inline-flex;
+}
+
+.yadisk-remaining-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.status-bar-item .yadisk-remaining {
+	margin-left: 8px;
+	font-size: inherit;
+}
+
+.yadisk-status-button {
+	display: inline-flex;
+	align-items: center;
+}
+
+.yadisk-status-button svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.yadisk-status-button.is-syncing .yadisk-sync-arrows {
+	transform-box: view-box;
+	transform-origin: 50% 50%;
+	animation: yadisk-spin 1.2s linear infinite;
+}
+
+@keyframes yadisk-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.yadisk-sync-settings .yadisk-compare {
+	width: 100%;
+	margin: 8px 0 16px;
+	border-collapse: collapse;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.yadisk-sync-settings .yadisk-compare caption {
+	caption-side: top;
+	margin-bottom: 6px;
+	text-align: left;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.yadisk-sync-settings .yadisk-compare th,
+.yadisk-sync-settings .yadisk-compare td {
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	text-align: left;
+	vertical-align: top;
+}
+
+.yadisk-sync-settings .yadisk-compare th {
+	font-weight: 500;
+	color: var(--text-normal);
 }
