@@ -12,6 +12,7 @@ import {
 } from "./types";
 import { MessageKey, setLanguage, t } from "./i18n";
 import type YaDiskSyncPlugin from "./main";
+import { MOBILE_DOWNLOAD_CHUNK_SIZES_MB, mobileDownloadChunkSizeMB } from "./transfer-settings";
 
 export class YaDiskSyncSettingTab extends PluginSettingTab {
 	plugin: YaDiskSyncPlugin;
@@ -278,6 +279,19 @@ export class YaDiskSyncSettingTab extends PluginSettingTab {
 						this.plugin.queueSaveSettings();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName(t("chunkSize.name"))
+			.setDesc(t("chunkSize.desc"))
+			.addDropdown((dd) => {
+				for (const size of MOBILE_DOWNLOAD_CHUNK_SIZES_MB) {
+					dd.addOption(String(size), t("chunkSize.option", { count: size }));
+				}
+				dd.setValue(String(this.plugin.settings.mobileDownloadChunkSizeMB)).onChange((value) => {
+					this.plugin.settings.mobileDownloadChunkSizeMB = mobileDownloadChunkSizeMB(Number(value));
+					this.plugin.queueSaveSettings();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName(t("concurrency.name"))

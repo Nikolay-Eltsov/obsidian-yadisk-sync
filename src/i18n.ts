@@ -51,6 +51,9 @@ const en = {
 	"exclude.name": "Exclude patterns",
 	"exclude.desc": "One pattern per line",
 	"maxSize.name": "Max file size (mb)",
+	"chunkSize.name": "Mobile download chunk size",
+	"chunkSize.desc": "On Android and iOS, files larger than this size are downloaded in parts. Smaller parts use less memory but need more requests. Default: 4 MiB. This does not exclude large files; the maximum file size setting still applies. Changes apply to the next file.",
+	"chunkSize.option": "{count} MiB",
 	"concurrency.name": "Parallel transfers",
 	"concurrency.desc":
 		"How many files to upload or download at once. Higher is faster on large vaults; lower it if Yandex Disk starts rate-limiting.",
@@ -68,7 +71,7 @@ const en = {
 		"During a sync, show how many files are left to upload, download and delete, with small icons. The queue panel shows them regardless. Desktop only: there is no status bar on mobile.",
 	"screen.name": "Keep screen on during long syncs",
 	"screen.desc":
-		"On iOS a locked screen suspends Obsidian and freezes the sync. This holds the screen awake for syncs of 50 files or more; short syncs are unaffected.",
+		"Keeps the screen awake while Obsidian syncs on mobile, including scans and a single large file. Switching to another app may still suspend the sync.",
 	"fullSync.name": "Full sync",
 	"fullSync.desc":
 		"Reads all of Yandex Disk again and re-checks every file in the vault, trusting nothing saved. For when a change made elsewhere has not arrived; slow on a large vault. The sync button is the quick one: it skips reading Yandex Disk when the disk reports no changes.",
@@ -279,6 +282,9 @@ const ru: Record<MessageKey, string> = {
 	"exclude.name": "Исключения",
 	"exclude.desc": "По одному шаблону на строку",
 	"maxSize.name": "Максимальный размер файла (МБ)",
+	"chunkSize.name": "Размер порции скачивания на телефоне",
+	"chunkSize.desc": "На Android и iOS файлы больше выбранного размера скачиваются частями. Меньшая порция занимает меньше памяти, но требует больше запросов. По умолчанию — 4 МиБ. Большие файлы не исключаются: для них действует отдельный лимит размера файла. Изменение применяется со следующего файла.",
+	"chunkSize.option": "{count} МиБ",
 	"concurrency.name": "Параллельные передачи",
 	"concurrency.desc":
 		"Сколько файлов отправлять или скачивать одновременно. Больше — быстрее на больших хранилищах; уменьшите, если Яндекс Диск начнёт ограничивать запросы.",
@@ -296,7 +302,7 @@ const ru: Record<MessageKey, string> = {
 		"Во время синхронизации показывать, сколько файлов осталось отправить, скачать и удалить, маленькими значками. В панели очереди они видны в любом случае. Только на компьютере: на телефоне строки состояния нет.",
 	"screen.name": "Не гасить экран при долгой синхронизации",
 	"screen.desc":
-		"На iOS блокировка экрана приостанавливает Obsidian и замораживает синхронизацию. Эта настройка не даёт экрану погаснуть при синхронизации от 50 файлов; короткие не затрагиваются.",
+		"Не даёт экрану погаснуть во время синхронизации на телефоне, включая поиск изменений и передачу одного большого файла. Переключение в другое приложение всё ещё может приостановить синхронизацию.",
 	"fullSync.name": "Полная синхронизация",
 	"fullSync.desc":
 		"Заново читает весь Яндекс Диск и перепроверяет каждый файл хранилища, не полагаясь на сохранённое. Нужна, если изменение с другого устройства не пришло; на большом хранилище идёт долго. Кнопка синхронизации — быстрая: если Диск сообщает, что изменений нет, она его не перечитывает.",

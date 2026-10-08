@@ -128,44 +128,72 @@ function rhex(n: number): string {
 }
 
 export function md5(buffer: ArrayBuffer): string {
-	const bytes = new Uint8Array(buffer);
-	const n = bytes.length;
+	const hasher = new IncrementalMd5();
+	hasher.update(buffer);
+	return hasher.digest();
+}
 
-	const state = [1732584193, -271733879, -1732584194, 271733878];
-	let i: number;
+/** Incremental MD5 with constant memory use (at most one partial 64-byte block). */
+export class IncrementalMd5 {
+	private readonly state = [1732584193, -271733879, -1732584194, 271733878];
+	private readonly tail = new Uint8Array(64);
+	private tailLength = 0;
+	// Byte count modulo 2^64, stored as two unsigned 32-bit words.
+	private lengthLow = 0;
+	private lengthHigh = 0;
+	private result?: string;
 
-	// Process full 64-byte blocks
-	for (i = 64; i <= n; i += 64) {
-		md5cycle(state, md5blk(bytes, i - 64));
+	update(input: Uint8Array | ArrayBuffer): void {
+		if (this.result !== undefined) throw new Error("Cannot update MD5 after digest()");
+		const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : input;
+		const length = bytes.length;
+		const nextLow = (this.lengthLow + length) >>> 0;
+		this.lengthHigh = (this.lengthHigh + Math.floor(length / 0x100000000) + (nextLow < this.lengthLow ? 1 : 0)) >>> 0;
+		this.lengthLow = nextLow;
+
+		let offset = 0;
+		if (this.tailLength > 0) {
+			const copied = Math.min(64 - this.tailLength, length);
+			this.tail.set(bytes.subarray(0, copied), this.tailLength);
+			this.tailLength += copied;
+			offset += copied;
+			if (this.tailLength === 64) {
+				md5cycle(this.state, md5blk(this.tail, 0));
+				this.tailLength = 0;
+			}
+		}
+
+		while (offset + 64 <= length) {
+			md5cycle(this.state, md5blk(bytes, offset));
+			offset += 64;
+		}
+		if (offset < length) {
+			this.tail.set(bytes.subarray(offset), 0);
+			this.tailLength = length - offset;
+		}
 	}
 
-	// Handle remaining bytes with padding
-	const tail = new Uint8Array(64);
-	const remaining = n - (i - 64);
-	for (let j = 0; j < remaining; j++) {
-		tail[j] = bytes[i - 64 + j];
+	digest(): string {
+		if (this.result !== undefined) return this.result;
+		const remaining = this.tailLength;
+		this.tail[remaining] = 0x80;
+		if (remaining >= 56) {
+			this.tail.fill(0, remaining + 1);
+			md5cycle(this.state, md5blk(this.tail, 0));
+			this.tail.fill(0);
+		} else {
+			this.tail.fill(0, remaining + 1);
+		}
+
+		// Convert the 64-bit byte count to a 64-bit little-endian bit count.
+		const bitLow = (this.lengthLow << 3) >>> 0;
+		const bitHigh = ((this.lengthHigh << 3) | (this.lengthLow >>> 29)) >>> 0;
+		for (let i = 0; i < 4; i++) {
+			this.tail[56 + i] = (bitLow >>> (i * 8)) & 0xff;
+			this.tail[60 + i] = (bitHigh >>> (i * 8)) & 0xff;
+		}
+		md5cycle(this.state, md5blk(this.tail, 0));
+		this.result = rhex(this.state[0]) + rhex(this.state[1]) + rhex(this.state[2]) + rhex(this.state[3]);
+		return this.result;
 	}
-	tail[remaining] = 0x80;
-
-	if (remaining > 55) {
-		// Need two blocks for padding
-		md5cycle(state, md5blk(tail, 0));
-		tail.fill(0);
-	}
-
-	// Append length in bits as 64-bit little-endian
-	const bitLen = n * 8;
-	tail[56] = bitLen & 0xff;
-	tail[57] = (bitLen >>> 8) & 0xff;
-	tail[58] = (bitLen >>> 16) & 0xff;
-	tail[59] = (bitLen >>> 24) & 0xff;
-	// For files < 512MB, high 32 bits of length are 0
-	tail[60] = 0;
-	tail[61] = 0;
-	tail[62] = 0;
-	tail[63] = 0;
-
-	md5cycle(state, md5blk(tail, 0));
-
-	return rhex(state[0]) + rhex(state[1]) + rhex(state[2]) + rhex(state[3]);
 }

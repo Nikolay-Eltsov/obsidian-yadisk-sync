@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, TFile } from "obsidian";
 import {
 	DEFAULT_SETTINGS,
 	FileRecord,
@@ -11,7 +11,8 @@ import {
 	YaDiskSyncSettings,
 } from "./types";
 import { matchesExcludePattern, yieldToUi } from "./utils";
-import { md5 } from "./md5";
+import { hashVaultFile } from "./vault-io";
+import { recoverStaged } from "./staged-file";
 import { ScanProgress, YandexDiskClient } from "./yandex-client";
 
 const EMPTY_STATE: SyncState = {
@@ -124,6 +125,7 @@ export class SyncStateManager {
 			...settings.excludePatterns,
 			`${configDir}/workspace*.json`,
 			`${configDir}/plugins/*/data.json`,
+			`${configDir}/plugins/yadisk-sync/transfers/**`,
 		];
 	}
 
@@ -164,6 +166,11 @@ export class SyncStateManager {
 		onProgress?: LocalScanProgress,
 		shouldStop?: () => boolean,
 	): Promise<ScanResult> {
+		const recovered = await recoverStaged(this.app.vault.adapter, `${this.app.vault.configDir}/plugins/yadisk-sync/transfers`);
+		for (const path of recovered) {
+			for (let n = 0; n < 60 && !(this.app.vault.getAbstractFileByPath(path) instanceof TFile); n++) await new Promise<void>(r => setTimeout(r, 50));
+			if (!(this.app.vault.getAbstractFileByPath(path) instanceof TFile)) throw new Error("Recovered file is not indexed yet; sync stopped safely");
+		}
 		const files = this.app.vault.getFiles();
 		const snapshot: Record<string, FileRecord> = {};
 		const skipped = new Set<string>();
@@ -194,8 +201,7 @@ export class SyncStateManager {
 			if (prev && prev.mtime === file.stat.mtime && prev.size === file.stat.size) {
 				hash = prev.md5;
 			} else {
-				const data = await this.app.vault.readBinary(file);
-				hash = md5(data);
+				hash = await hashVaultFile(this.app, file, shouldStop);
 			}
 
 			snapshot[file.path] = {

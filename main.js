@@ -22,7 +22,17 @@ __export(main_exports, {
   default: () => YaDiskSyncPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian11 = require("obsidian");
+var import_obsidian13 = require("obsidian");
+
+// src/transfer-settings.ts
+var MOBILE_DOWNLOAD_CHUNK_SIZES_MB = [1, 2, 4, 8];
+var DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB = 4;
+function mobileDownloadChunkSizeMB(value) {
+  return MOBILE_DOWNLOAD_CHUNK_SIZES_MB.some((size) => size === value) ? value : DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB;
+}
+function mobileDownloadChunkBytes(value) {
+  return mobileDownloadChunkSizeMB(value) * 1024 * 1024;
+}
 
 // src/types.ts
 var PROGRESS_DELAY_MS = 2e4;
@@ -42,6 +52,7 @@ var DEFAULT_SETTINGS = {
     ".trash/**"
   ],
   maxFileSizeMB: 50,
+  mobileDownloadChunkSizeMB: DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB,
   syncOnStartup: true,
   concurrency: 4,
   scanConcurrency: 12,
@@ -104,6 +115,9 @@ var en = {
   "exclude.name": "Exclude patterns",
   "exclude.desc": "One pattern per line",
   "maxSize.name": "Max file size (mb)",
+  "chunkSize.name": "Mobile download chunk size",
+  "chunkSize.desc": "On Android and iOS, files larger than this size are downloaded in parts. Smaller parts use less memory but need more requests. Default: 4 MiB. This does not exclude large files; the maximum file size setting still applies. Changes apply to the next file.",
+  "chunkSize.option": "{count} MiB",
   "concurrency.name": "Parallel transfers",
   "concurrency.desc": "How many files to upload or download at once. Higher is faster on large vaults; lower it if Yandex Disk starts rate-limiting.",
   "scanConcurrency.name": "Parallel folder scans",
@@ -116,7 +130,7 @@ var en = {
   "statusCounts.name": "Remaining files in the status bar",
   "statusCounts.desc": "During a sync, show how many files are left to upload, download and delete, with small icons. The queue panel shows them regardless. Desktop only: there is no status bar on mobile.",
   "screen.name": "Keep screen on during long syncs",
-  "screen.desc": "On iOS a locked screen suspends Obsidian and freezes the sync. This holds the screen awake for syncs of 50 files or more; short syncs are unaffected.",
+  "screen.desc": "Keeps the screen awake while Obsidian syncs on mobile, including scans and a single large file. Switching to another app may still suspend the sync.",
   "fullSync.name": "Full sync",
   "fullSync.desc": "Reads all of Yandex Disk again and re-checks every file in the vault, trusting nothing saved. For when a change made elsewhere has not arrived; slow on a large vault. The sync button is the quick one: it skips reading Yandex Disk when the disk reports no changes.",
   "fullSync.button": "Sync fully",
@@ -308,6 +322,9 @@ var ru = {
   "exclude.name": "\u0418\u0441\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F",
   "exclude.desc": "\u041F\u043E \u043E\u0434\u043D\u043E\u043C\u0443 \u0448\u0430\u0431\u043B\u043E\u043D\u0443 \u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0443",
   "maxSize.name": "\u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0430\u0437\u043C\u0435\u0440 \u0444\u0430\u0439\u043B\u0430 (\u041C\u0411)",
+  "chunkSize.name": "\u0420\u0430\u0437\u043C\u0435\u0440 \u043F\u043E\u0440\u0446\u0438\u0438 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F \u043D\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435",
+  "chunkSize.desc": "\u041D\u0430 Android \u0438 iOS \u0444\u0430\u0439\u043B\u044B \u0431\u043E\u043B\u044C\u0448\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0433\u043E \u0440\u0430\u0437\u043C\u0435\u0440\u0430 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u044E\u0442\u0441\u044F \u0447\u0430\u0441\u0442\u044F\u043C\u0438. \u041C\u0435\u043D\u044C\u0448\u0430\u044F \u043F\u043E\u0440\u0446\u0438\u044F \u0437\u0430\u043D\u0438\u043C\u0430\u0435\u0442 \u043C\u0435\u043D\u044C\u0448\u0435 \u043F\u0430\u043C\u044F\u0442\u0438, \u043D\u043E \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0431\u043E\u043B\u044C\u0448\u0435 \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432. \u041F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E \u2014 4 \u041C\u0438\u0411. \u0411\u043E\u043B\u044C\u0448\u0438\u0435 \u0444\u0430\u0439\u043B\u044B \u043D\u0435 \u0438\u0441\u043A\u043B\u044E\u0447\u0430\u044E\u0442\u0441\u044F: \u0434\u043B\u044F \u043D\u0438\u0445 \u0434\u0435\u0439\u0441\u0442\u0432\u0443\u0435\u0442 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0439 \u043B\u0438\u043C\u0438\u0442 \u0440\u0430\u0437\u043C\u0435\u0440\u0430 \u0444\u0430\u0439\u043B\u0430. \u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u043F\u0440\u0438\u043C\u0435\u043D\u044F\u0435\u0442\u0441\u044F \u0441\u043E \u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0433\u043E \u0444\u0430\u0439\u043B\u0430.",
+  "chunkSize.option": "{count} \u041C\u0438\u0411",
   "concurrency.name": "\u041F\u0430\u0440\u0430\u043B\u043B\u0435\u043B\u044C\u043D\u044B\u0435 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0438",
   "concurrency.desc": "\u0421\u043A\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u043E\u0432 \u043E\u0442\u043F\u0440\u0430\u0432\u043B\u044F\u0442\u044C \u0438\u043B\u0438 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u0442\u044C \u043E\u0434\u043D\u043E\u0432\u0440\u0435\u043C\u0435\u043D\u043D\u043E. \u0411\u043E\u043B\u044C\u0448\u0435 \u2014 \u0431\u044B\u0441\u0442\u0440\u0435\u0435 \u043D\u0430 \u0431\u043E\u043B\u044C\u0448\u0438\u0445 \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430\u0445; \u0443\u043C\u0435\u043D\u044C\u0448\u0438\u0442\u0435, \u0435\u0441\u043B\u0438 \u042F\u043D\u0434\u0435\u043A\u0441 \u0414\u0438\u0441\u043A \u043D\u0430\u0447\u043D\u0451\u0442 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0438\u0432\u0430\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441\u044B.",
   "scanConcurrency.name": "\u041F\u0430\u0440\u0430\u043B\u043B\u0435\u043B\u044C\u043D\u044B\u0439 \u043E\u043F\u0440\u043E\u0441 \u043F\u0430\u043F\u043E\u043A",
@@ -320,7 +337,7 @@ var ru = {
   "statusCounts.name": "\u041E\u0441\u0442\u0430\u0442\u043E\u043A \u0432 \u0441\u0442\u0440\u043E\u043A\u0435 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u044F",
   "statusCounts.desc": "\u0412\u043E \u0432\u0440\u0435\u043C\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u043F\u043E\u043A\u0430\u0437\u044B\u0432\u0430\u0442\u044C, \u0441\u043A\u043E\u043B\u044C\u043A\u043E \u0444\u0430\u0439\u043B\u043E\u0432 \u043E\u0441\u0442\u0430\u043B\u043E\u0441\u044C \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C, \u0441\u043A\u0430\u0447\u0430\u0442\u044C \u0438 \u0443\u0434\u0430\u043B\u0438\u0442\u044C, \u043C\u0430\u043B\u0435\u043D\u044C\u043A\u0438\u043C\u0438 \u0437\u043D\u0430\u0447\u043A\u0430\u043C\u0438. \u0412 \u043F\u0430\u043D\u0435\u043B\u0438 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u043E\u043D\u0438 \u0432\u0438\u0434\u043D\u044B \u0432 \u043B\u044E\u0431\u043E\u043C \u0441\u043B\u0443\u0447\u0430\u0435. \u0422\u043E\u043B\u044C\u043A\u043E \u043D\u0430 \u043A\u043E\u043C\u043F\u044C\u044E\u0442\u0435\u0440\u0435: \u043D\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u044F \u043D\u0435\u0442.",
   "screen.name": "\u041D\u0435 \u0433\u0430\u0441\u0438\u0442\u044C \u044D\u043A\u0440\u0430\u043D \u043F\u0440\u0438 \u0434\u043E\u043B\u0433\u043E\u0439 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438",
-  "screen.desc": "\u041D\u0430 iOS \u0431\u043B\u043E\u043A\u0438\u0440\u043E\u0432\u043A\u0430 \u044D\u043A\u0440\u0430\u043D\u0430 \u043F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u0430\u0432\u043B\u0438\u0432\u0430\u0435\u0442 Obsidian \u0438 \u0437\u0430\u043C\u043E\u0440\u0430\u0436\u0438\u0432\u0430\u0435\u0442 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E. \u042D\u0442\u0430 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u043D\u0435 \u0434\u0430\u0451\u0442 \u044D\u043A\u0440\u0430\u043D\u0443 \u043F\u043E\u0433\u0430\u0441\u043D\u0443\u0442\u044C \u043F\u0440\u0438 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u043E\u0442 50 \u0444\u0430\u0439\u043B\u043E\u0432; \u043A\u043E\u0440\u043E\u0442\u043A\u0438\u0435 \u043D\u0435 \u0437\u0430\u0442\u0440\u0430\u0433\u0438\u0432\u0430\u044E\u0442\u0441\u044F.",
+  "screen.desc": "\u041D\u0435 \u0434\u0430\u0451\u0442 \u044D\u043A\u0440\u0430\u043D\u0443 \u043F\u043E\u0433\u0430\u0441\u043D\u0443\u0442\u044C \u0432\u043E \u0432\u0440\u0435\u043C\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u043D\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435, \u0432\u043A\u043B\u044E\u0447\u0430\u044F \u043F\u043E\u0438\u0441\u043A \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u0438 \u043F\u0435\u0440\u0435\u0434\u0430\u0447\u0443 \u043E\u0434\u043D\u043E\u0433\u043E \u0431\u043E\u043B\u044C\u0448\u043E\u0433\u043E \u0444\u0430\u0439\u043B\u0430. \u041F\u0435\u0440\u0435\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u0432 \u0434\u0440\u0443\u0433\u043E\u0435 \u043F\u0440\u0438\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u0432\u0441\u0451 \u0435\u0449\u0451 \u043C\u043E\u0436\u0435\u0442 \u043F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044E.",
   "fullSync.name": "\u041F\u043E\u043B\u043D\u0430\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F",
   "fullSync.desc": "\u0417\u0430\u043D\u043E\u0432\u043E \u0447\u0438\u0442\u0430\u0435\u0442 \u0432\u0435\u0441\u044C \u042F\u043D\u0434\u0435\u043A\u0441 \u0414\u0438\u0441\u043A \u0438 \u043F\u0435\u0440\u0435\u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u0442 \u043A\u0430\u0436\u0434\u044B\u0439 \u0444\u0430\u0439\u043B \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0430, \u043D\u0435 \u043F\u043E\u043B\u0430\u0433\u0430\u044F\u0441\u044C \u043D\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u0435. \u041D\u0443\u0436\u043D\u0430, \u0435\u0441\u043B\u0438 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0441 \u0434\u0440\u0443\u0433\u043E\u0433\u043E \u0443\u0441\u0442\u0440\u043E\u0439\u0441\u0442\u0432\u0430 \u043D\u0435 \u043F\u0440\u0438\u0448\u043B\u043E; \u043D\u0430 \u0431\u043E\u043B\u044C\u0448\u043E\u043C \u0445\u0440\u0430\u043D\u0438\u043B\u0438\u0449\u0435 \u0438\u0434\u0451\u0442 \u0434\u043E\u043B\u0433\u043E. \u041A\u043D\u043E\u043F\u043A\u0430 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u2014 \u0431\u044B\u0441\u0442\u0440\u0430\u044F: \u0435\u0441\u043B\u0438 \u0414\u0438\u0441\u043A \u0441\u043E\u043E\u0431\u0449\u0430\u0435\u0442, \u0447\u0442\u043E \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u043D\u0435\u0442, \u043E\u043D\u0430 \u0435\u0433\u043E \u043D\u0435 \u043F\u0435\u0440\u0435\u0447\u0438\u0442\u044B\u0432\u0430\u0435\u0442.",
   "fullSync.button": "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043F\u043E\u043B\u043D\u043E\u0441\u0442\u044C\u044E",
@@ -596,6 +613,236 @@ function getClientId() {
 }
 function getClientSecret() {
   return atob(_b);
+}
+
+// src/md5.ts
+function md5cycle(x, k) {
+  let a = x[0], b = x[1], c = x[2], d = x[3];
+  a = ff(a, b, c, d, k[0], 7, -680876936);
+  d = ff(d, a, b, c, k[1], 12, -389564586);
+  c = ff(c, d, a, b, k[2], 17, 606105819);
+  b = ff(b, c, d, a, k[3], 22, -1044525330);
+  a = ff(a, b, c, d, k[4], 7, -176418897);
+  d = ff(d, a, b, c, k[5], 12, 1200080426);
+  c = ff(c, d, a, b, k[6], 17, -1473231341);
+  b = ff(b, c, d, a, k[7], 22, -45705983);
+  a = ff(a, b, c, d, k[8], 7, 1770035416);
+  d = ff(d, a, b, c, k[9], 12, -1958414417);
+  c = ff(c, d, a, b, k[10], 17, -42063);
+  b = ff(b, c, d, a, k[11], 22, -1990404162);
+  a = ff(a, b, c, d, k[12], 7, 1804603682);
+  d = ff(d, a, b, c, k[13], 12, -40341101);
+  c = ff(c, d, a, b, k[14], 17, -1502002290);
+  b = ff(b, c, d, a, k[15], 22, 1236535329);
+  a = gg(a, b, c, d, k[1], 5, -165796510);
+  d = gg(d, a, b, c, k[6], 9, -1069501632);
+  c = gg(c, d, a, b, k[11], 14, 643717713);
+  b = gg(b, c, d, a, k[0], 20, -373897302);
+  a = gg(a, b, c, d, k[5], 5, -701558691);
+  d = gg(d, a, b, c, k[10], 9, 38016083);
+  c = gg(c, d, a, b, k[15], 14, -660478335);
+  b = gg(b, c, d, a, k[4], 20, -405537848);
+  a = gg(a, b, c, d, k[9], 5, 568446438);
+  d = gg(d, a, b, c, k[14], 9, -1019803690);
+  c = gg(c, d, a, b, k[3], 14, -187363961);
+  b = gg(b, c, d, a, k[8], 20, 1163531501);
+  a = gg(a, b, c, d, k[13], 5, -1444681467);
+  d = gg(d, a, b, c, k[2], 9, -51403784);
+  c = gg(c, d, a, b, k[7], 14, 1735328473);
+  b = gg(b, c, d, a, k[12], 20, -1926607734);
+  a = hh(a, b, c, d, k[5], 4, -378558);
+  d = hh(d, a, b, c, k[8], 11, -2022574463);
+  c = hh(c, d, a, b, k[11], 16, 1839030562);
+  b = hh(b, c, d, a, k[14], 23, -35309556);
+  a = hh(a, b, c, d, k[1], 4, -1530992060);
+  d = hh(d, a, b, c, k[4], 11, 1272893353);
+  c = hh(c, d, a, b, k[7], 16, -155497632);
+  b = hh(b, c, d, a, k[10], 23, -1094730640);
+  a = hh(a, b, c, d, k[13], 4, 681279174);
+  d = hh(d, a, b, c, k[0], 11, -358537222);
+  c = hh(c, d, a, b, k[3], 16, -722521979);
+  b = hh(b, c, d, a, k[6], 23, 76029189);
+  a = hh(a, b, c, d, k[9], 4, -640364487);
+  d = hh(d, a, b, c, k[12], 11, -421815835);
+  c = hh(c, d, a, b, k[15], 16, 530742520);
+  b = hh(b, c, d, a, k[2], 23, -995338651);
+  a = ii(a, b, c, d, k[0], 6, -198630844);
+  d = ii(d, a, b, c, k[7], 10, 1126891415);
+  c = ii(c, d, a, b, k[14], 15, -1416354905);
+  b = ii(b, c, d, a, k[5], 21, -57434055);
+  a = ii(a, b, c, d, k[12], 6, 1700485571);
+  d = ii(d, a, b, c, k[3], 10, -1894986606);
+  c = ii(c, d, a, b, k[10], 15, -1051523);
+  b = ii(b, c, d, a, k[1], 21, -2054922799);
+  a = ii(a, b, c, d, k[8], 6, 1873313359);
+  d = ii(d, a, b, c, k[15], 10, -30611744);
+  c = ii(c, d, a, b, k[6], 15, -1560198380);
+  b = ii(b, c, d, a, k[13], 21, 1309151649);
+  a = ii(a, b, c, d, k[4], 6, -145523070);
+  d = ii(d, a, b, c, k[11], 10, -1120210379);
+  c = ii(c, d, a, b, k[2], 15, 718787259);
+  b = ii(b, c, d, a, k[9], 21, -343485551);
+  x[0] = add32(a, x[0]);
+  x[1] = add32(b, x[1]);
+  x[2] = add32(c, x[2]);
+  x[3] = add32(d, x[3]);
+}
+function cmn(q, a, b, x, s, t2) {
+  a = add32(add32(a, q), add32(x, t2));
+  return add32(a << s | a >>> 32 - s, b);
+}
+function ff(a, b, c, d, x, s, t2) {
+  return cmn(b & c | ~b & d, a, b, x, s, t2);
+}
+function gg(a, b, c, d, x, s, t2) {
+  return cmn(b & d | c & ~d, a, b, x, s, t2);
+}
+function hh(a, b, c, d, x, s, t2) {
+  return cmn(b ^ c ^ d, a, b, x, s, t2);
+}
+function ii(a, b, c, d, x, s, t2) {
+  return cmn(c ^ (b | ~d), a, b, x, s, t2);
+}
+function add32(a, b) {
+  return a + b & 4294967295;
+}
+function md5blk(bytes, offset) {
+  const md5blks = [];
+  for (let i = 0; i < 64; i += 4) {
+    md5blks[i >> 2] = bytes[offset + i] + (bytes[offset + i + 1] << 8) + (bytes[offset + i + 2] << 16) + (bytes[offset + i + 3] << 24);
+  }
+  return md5blks;
+}
+function rhex(n) {
+  const hex = "0123456789abcdef";
+  let s = "";
+  for (let j = 0; j < 4; j++) {
+    s += hex.charAt(n >> j * 8 + 4 & 15) + hex.charAt(n >> j * 8 & 15);
+  }
+  return s;
+}
+function md5(buffer) {
+  const hasher = new IncrementalMd5();
+  hasher.update(buffer);
+  return hasher.digest();
+}
+var IncrementalMd5 = class {
+  constructor() {
+    this.state = [1732584193, -271733879, -1732584194, 271733878];
+    this.tail = new Uint8Array(64);
+    this.tailLength = 0;
+    // Byte count modulo 2^64, stored as two unsigned 32-bit words.
+    this.lengthLow = 0;
+    this.lengthHigh = 0;
+  }
+  update(input) {
+    if (this.result !== void 0)
+      throw new Error("Cannot update MD5 after digest()");
+    const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : input;
+    const length = bytes.length;
+    const nextLow = this.lengthLow + length >>> 0;
+    this.lengthHigh = this.lengthHigh + Math.floor(length / 4294967296) + (nextLow < this.lengthLow ? 1 : 0) >>> 0;
+    this.lengthLow = nextLow;
+    let offset = 0;
+    if (this.tailLength > 0) {
+      const copied = Math.min(64 - this.tailLength, length);
+      this.tail.set(bytes.subarray(0, copied), this.tailLength);
+      this.tailLength += copied;
+      offset += copied;
+      if (this.tailLength === 64) {
+        md5cycle(this.state, md5blk(this.tail, 0));
+        this.tailLength = 0;
+      }
+    }
+    while (offset + 64 <= length) {
+      md5cycle(this.state, md5blk(bytes, offset));
+      offset += 64;
+    }
+    if (offset < length) {
+      this.tail.set(bytes.subarray(offset), 0);
+      this.tailLength = length - offset;
+    }
+  }
+  digest() {
+    if (this.result !== void 0)
+      return this.result;
+    const remaining = this.tailLength;
+    this.tail[remaining] = 128;
+    if (remaining >= 56) {
+      this.tail.fill(0, remaining + 1);
+      md5cycle(this.state, md5blk(this.tail, 0));
+      this.tail.fill(0);
+    } else {
+      this.tail.fill(0, remaining + 1);
+    }
+    const bitLow = this.lengthLow << 3 >>> 0;
+    const bitHigh = (this.lengthHigh << 3 | this.lengthLow >>> 29) >>> 0;
+    for (let i = 0; i < 4; i++) {
+      this.tail[56 + i] = bitLow >>> i * 8 & 255;
+      this.tail[60 + i] = bitHigh >>> i * 8 & 255;
+    }
+    md5cycle(this.state, md5blk(this.tail, 0));
+    this.result = rhex(this.state[0]) + rhex(this.state[1]) + rhex(this.state[2]) + rhex(this.state[3]);
+    return this.result;
+  }
+};
+
+// src/mobile-transfer.ts
+var TRANSFER_CHUNK = 4 * 1024 * 1024;
+async function downloadInChunks(size, request, append, shouldStop, chunkBytes = TRANSFER_CHUNK) {
+  var _a2;
+  if (!Number.isInteger(chunkBytes) || chunkBytes <= 0 || chunkBytes > 8 * 1024 * 1024)
+    throw new Error("Invalid mobile download chunk size");
+  const hash = new IncrementalMd5();
+  for (let start = 0; start < size; start += chunkBytes) {
+    if (shouldStop())
+      throw new Error("Transfer cancelled");
+    const end = Math.min(start + chunkBytes, size) - 1;
+    const r = await request(start, end);
+    const range = (_a2 = Object.entries(r.headers).find(([k]) => k.toLowerCase() === "content-range")) == null ? void 0 : _a2[1];
+    if (r.status !== 206 || range !== `bytes ${start}-${end}/${size}` || r.arrayBuffer.byteLength !== end - start + 1) {
+      throw new Error("Invalid partial download; original file preserved");
+    }
+    if (shouldStop())
+      throw new Error("Transfer cancelled");
+    hash.update(r.arrayBuffer);
+    await append(r.arrayBuffer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  return hash.digest();
+}
+async function hashStream(reader, shouldStop) {
+  const hash = new IncrementalMd5();
+  try {
+    while (true) {
+      if (shouldStop())
+        throw new Error("Transfer cancelled");
+      const { value, done } = await reader.read();
+      if (done)
+        break;
+      hash.update(value);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return hash.digest();
+  } finally {
+    await reader.cancel().catch(() => {
+    });
+    reader.releaseLock();
+  }
+}
+var mobileUploadQueue = Promise.resolve();
+async function withMobileUpload(work) {
+  const previous = mobileUploadQueue;
+  let release;
+  mobileUploadQueue = new Promise((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+  }
 }
 
 // src/yandex-client.ts
@@ -1060,6 +1307,70 @@ var YandexDiskClient = class _YandexDiskClient {
     const resp = await this.requestStorage({ url: link.href, method: "GET" });
     return resp.arrayBuffer;
   }
+  async downloadFileTo(remotePath, size, append, stop, chunkSizeMB = DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB) {
+    const params = new URLSearchParams({ path: remotePath });
+    const linkResp = await this.request({ url: `${API_BASE}/resources/download?${params.toString()}` });
+    let link = linkResp.json;
+    return downloadInChunks(size, async (start, end) => {
+      var _a2;
+      for (let attempt = 0; ; attempt++) {
+        if (stop())
+          throw new Error("Transfer cancelled");
+        const controller = new AbortController();
+        const timer = setInterval(() => {
+          if (stop())
+            controller.abort();
+        }, 200);
+        try {
+          const response = await fetch(link.href, { headers: { Range: `bytes=${start}-${end}` }, signal: controller.signal });
+          const range = response.headers.get("Content-Range");
+          const expected = `bytes ${start}-${end}/${size}`;
+          if (response.status !== 206 || range !== null && range !== expected) {
+            await ((_a2 = response.body) == null ? void 0 : _a2.cancel());
+            throw new YaDiskApiError(response.status, "Invalid partial download");
+          }
+          return { status: response.status, headers: { "content-range": range != null ? range : expected }, arrayBuffer: await response.arrayBuffer() };
+        } catch (error) {
+          if (stop() || attempt >= MAX_RETRIES || error instanceof YaDiskApiError && !isRetryableStatus(error.status))
+            throw error;
+          await this.delay(_YandexDiskClient.backoffMs(attempt));
+          link = (await this.request({ url: `${API_BASE}/resources/download?${params.toString()}` })).json;
+        } finally {
+          clearInterval(timer);
+        }
+      }
+    }, append, stop, mobileDownloadChunkBytes(chunkSizeMB));
+  }
+  async uploadBlob(remotePath, blob, stop) {
+    var _a2;
+    await this.ensureFolderExists(remotePath.substring(0, remotePath.lastIndexOf("/")));
+    const params = new URLSearchParams({ path: remotePath, overwrite: "true" });
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      if (stop())
+        controller.abort();
+    }, 200);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        if (stop())
+          throw new Error("Transfer cancelled");
+        try {
+          const link = (await this.request({ url: `${API_BASE}/resources/upload?${params.toString()}` })).json;
+          const response = await fetch(link.href, { method: "PUT", body: blob, headers: { "Content-Type": "application/octet-stream" }, signal: controller.signal });
+          await ((_a2 = response.body) == null ? void 0 : _a2.cancel());
+          if (!response.ok)
+            throw new YaDiskApiError(response.status, "Upload failed");
+          return;
+        } catch (error) {
+          if (stop() || attempt >= MAX_RETRIES || error instanceof YaDiskApiError && !isRetryableStatus(error.status))
+            throw error;
+          await this.delay(_YandexDiskClient.backoffMs(attempt));
+        }
+      }
+    } finally {
+      clearInterval(timer);
+    }
+  }
   async deleteResource(path, permanently = false) {
     const params = new URLSearchParams({
       path,
@@ -1073,7 +1384,7 @@ var YandexDiskClient = class _YandexDiskClient {
 };
 
 // src/sync-engine.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/conflict-modal.ts
 var import_obsidian3 = require("obsidian");
@@ -1298,141 +1609,88 @@ function revert(snapshot, path, prev) {
     delete snapshot[path];
 }
 
-// src/md5.ts
-function md5cycle(x, k) {
-  let a = x[0], b = x[1], c = x[2], d = x[3];
-  a = ff(a, b, c, d, k[0], 7, -680876936);
-  d = ff(d, a, b, c, k[1], 12, -389564586);
-  c = ff(c, d, a, b, k[2], 17, 606105819);
-  b = ff(b, c, d, a, k[3], 22, -1044525330);
-  a = ff(a, b, c, d, k[4], 7, -176418897);
-  d = ff(d, a, b, c, k[5], 12, 1200080426);
-  c = ff(c, d, a, b, k[6], 17, -1473231341);
-  b = ff(b, c, d, a, k[7], 22, -45705983);
-  a = ff(a, b, c, d, k[8], 7, 1770035416);
-  d = ff(d, a, b, c, k[9], 12, -1958414417);
-  c = ff(c, d, a, b, k[10], 17, -42063);
-  b = ff(b, c, d, a, k[11], 22, -1990404162);
-  a = ff(a, b, c, d, k[12], 7, 1804603682);
-  d = ff(d, a, b, c, k[13], 12, -40341101);
-  c = ff(c, d, a, b, k[14], 17, -1502002290);
-  b = ff(b, c, d, a, k[15], 22, 1236535329);
-  a = gg(a, b, c, d, k[1], 5, -165796510);
-  d = gg(d, a, b, c, k[6], 9, -1069501632);
-  c = gg(c, d, a, b, k[11], 14, 643717713);
-  b = gg(b, c, d, a, k[0], 20, -373897302);
-  a = gg(a, b, c, d, k[5], 5, -701558691);
-  d = gg(d, a, b, c, k[10], 9, 38016083);
-  c = gg(c, d, a, b, k[15], 14, -660478335);
-  b = gg(b, c, d, a, k[4], 20, -405537848);
-  a = gg(a, b, c, d, k[9], 5, 568446438);
-  d = gg(d, a, b, c, k[14], 9, -1019803690);
-  c = gg(c, d, a, b, k[3], 14, -187363961);
-  b = gg(b, c, d, a, k[8], 20, 1163531501);
-  a = gg(a, b, c, d, k[13], 5, -1444681467);
-  d = gg(d, a, b, c, k[2], 9, -51403784);
-  c = gg(c, d, a, b, k[7], 14, 1735328473);
-  b = gg(b, c, d, a, k[12], 20, -1926607734);
-  a = hh(a, b, c, d, k[5], 4, -378558);
-  d = hh(d, a, b, c, k[8], 11, -2022574463);
-  c = hh(c, d, a, b, k[11], 16, 1839030562);
-  b = hh(b, c, d, a, k[14], 23, -35309556);
-  a = hh(a, b, c, d, k[1], 4, -1530992060);
-  d = hh(d, a, b, c, k[4], 11, 1272893353);
-  c = hh(c, d, a, b, k[7], 16, -155497632);
-  b = hh(b, c, d, a, k[10], 23, -1094730640);
-  a = hh(a, b, c, d, k[13], 4, 681279174);
-  d = hh(d, a, b, c, k[0], 11, -358537222);
-  c = hh(c, d, a, b, k[3], 16, -722521979);
-  b = hh(b, c, d, a, k[6], 23, 76029189);
-  a = hh(a, b, c, d, k[9], 4, -640364487);
-  d = hh(d, a, b, c, k[12], 11, -421815835);
-  c = hh(c, d, a, b, k[15], 16, 530742520);
-  b = hh(b, c, d, a, k[2], 23, -995338651);
-  a = ii(a, b, c, d, k[0], 6, -198630844);
-  d = ii(d, a, b, c, k[7], 10, 1126891415);
-  c = ii(c, d, a, b, k[14], 15, -1416354905);
-  b = ii(b, c, d, a, k[5], 21, -57434055);
-  a = ii(a, b, c, d, k[12], 6, 1700485571);
-  d = ii(d, a, b, c, k[3], 10, -1894986606);
-  c = ii(c, d, a, b, k[10], 15, -1051523);
-  b = ii(b, c, d, a, k[1], 21, -2054922799);
-  a = ii(a, b, c, d, k[8], 6, 1873313359);
-  d = ii(d, a, b, c, k[15], 10, -30611744);
-  c = ii(c, d, a, b, k[6], 15, -1560198380);
-  b = ii(b, c, d, a, k[13], 21, 1309151649);
-  a = ii(a, b, c, d, k[4], 6, -145523070);
-  d = ii(d, a, b, c, k[11], 10, -1120210379);
-  c = ii(c, d, a, b, k[2], 15, 718787259);
-  b = ii(b, c, d, a, k[9], 21, -343485551);
-  x[0] = add32(a, x[0]);
-  x[1] = add32(b, x[1]);
-  x[2] = add32(c, x[2]);
-  x[3] = add32(d, x[3]);
+// src/vault-io.ts
+var import_obsidian4 = require("obsidian");
+function needsMobileTransfer(size, chunkBytes = TRANSFER_CHUNK) {
+  return import_obsidian4.Platform.isMobile && size > chunkBytes;
 }
-function cmn(q, a, b, x, s, t2) {
-  a = add32(add32(a, q), add32(x, t2));
-  return add32(a << s | a >>> 32 - s, b);
+async function hashVaultFile(app, file, stop = () => false) {
+  if (!needsMobileTransfer(file.stat.size))
+    return md5(await app.vault.readBinary(file));
+  const response = await fetch(app.vault.adapter.getResourcePath(file.path));
+  if (!response.ok || !response.body)
+    throw new Error("Cannot stream local file for hashing");
+  return hashStream(response.body.getReader(), stop);
 }
-function ff(a, b, c, d, x, s, t2) {
-  return cmn(b & c | ~b & d, a, b, x, s, t2);
+async function vaultFileBlob(app, file) {
+  const response = await fetch(app.vault.adapter.getResourcePath(file.path));
+  if (!response.ok)
+    throw new Error("Cannot read local file for upload");
+  const blob = await response.blob();
+  if (blob.size !== file.stat.size)
+    throw new Error("Local file changed during upload preparation");
+  return blob;
 }
-function gg(a, b, c, d, x, s, t2) {
-  return cmn(b & d | c & ~d, a, b, x, s, t2);
-}
-function hh(a, b, c, d, x, s, t2) {
-  return cmn(b ^ c ^ d, a, b, x, s, t2);
-}
-function ii(a, b, c, d, x, s, t2) {
-  return cmn(c ^ (b | ~d), a, b, x, s, t2);
-}
-function add32(a, b) {
-  return a + b & 4294967295;
-}
-function md5blk(bytes, offset) {
-  const md5blks = [];
-  for (let i = 0; i < 64; i += 4) {
-    md5blks[i >> 2] = bytes[offset + i] + (bytes[offset + i + 1] << 8) + (bytes[offset + i + 2] << 16) + (bytes[offset + i + 3] << 24);
+
+// src/staged-file.ts
+async function ensureStagingFolder(adapter, folder) {
+  if (await adapter.exists(folder))
+    return;
+  try {
+    await adapter.mkdir(folder);
+  } catch (error) {
+    if (!await adapter.exists(folder))
+      throw error;
   }
-  return md5blks;
 }
-function rhex(n) {
-  const hex = "0123456789abcdef";
-  let s = "";
-  for (let j = 0; j < 4; j++) {
-    s += hex.charAt(n >> j * 8 + 4 & 15) + hex.charAt(n >> j * 8 & 15);
+async function replaceStaged(adapter, temp, target) {
+  const backup = `${temp}.previous`;
+  const journal = `${temp}.json`;
+  await adapter.write(journal, JSON.stringify({ target, temp, backup }));
+  let saved = false;
+  let committed = false;
+  try {
+    if (await adapter.exists(target)) {
+      await adapter.rename(target, backup);
+      saved = true;
+    }
+    try {
+      await adapter.rename(temp, target);
+      committed = true;
+    } catch (error) {
+      if (saved) {
+        await adapter.rename(backup, target);
+        saved = false;
+      }
+      throw error;
+    }
+  } finally {
+    if (!saved || committed) {
+      if (saved && await adapter.exists(backup))
+        await adapter.remove(backup);
+      if (await adapter.exists(journal))
+        await adapter.remove(journal);
+    }
   }
-  return s;
 }
-function md5(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const n = bytes.length;
-  const state = [1732584193, -271733879, -1732584194, 271733878];
-  let i;
-  for (i = 64; i <= n; i += 64) {
-    md5cycle(state, md5blk(bytes, i - 64));
+async function recoverStaged(adapter, folder) {
+  if (!await adapter.exists(folder))
+    return [];
+  const recovered = [];
+  for (const journal of (await adapter.list(folder)).files.filter((p) => p.endsWith(".part.json"))) {
+    const record = JSON.parse(await adapter.read(journal));
+    if (record.temp + ".json" !== journal || record.backup !== record.temp + ".previous" || !record.temp.startsWith(folder + "/") || typeof record.target !== "string" || record.target.startsWith("/") || record.target.split("/").some((p) => p === ".." || p === ".") || record.target.startsWith(".obsidian/") || !record.target)
+      throw new Error("Invalid transfer recovery record");
+    if (!await adapter.exists(record.target) && await adapter.exists(record.backup)) {
+      await adapter.rename(record.backup, record.target);
+      recovered.push(record.target);
+    }
+    if (await adapter.exists(record.temp))
+      await adapter.remove(record.temp);
+    if (!await adapter.exists(record.backup))
+      await adapter.remove(journal);
   }
-  const tail = new Uint8Array(64);
-  const remaining = n - (i - 64);
-  for (let j = 0; j < remaining; j++) {
-    tail[j] = bytes[i - 64 + j];
-  }
-  tail[remaining] = 128;
-  if (remaining > 55) {
-    md5cycle(state, md5blk(tail, 0));
-    tail.fill(0);
-  }
-  const bitLen = n * 8;
-  tail[56] = bitLen & 255;
-  tail[57] = bitLen >>> 8 & 255;
-  tail[58] = bitLen >>> 16 & 255;
-  tail[59] = bitLen >>> 24 & 255;
-  tail[60] = 0;
-  tail[61] = 0;
-  tail[62] = 0;
-  tail[63] = 0;
-  md5cycle(state, md5blk(tail, 0));
-  return rhex(state[0]) + rhex(state[1]) + rhex(state[2]) + rhex(state[3]);
+  return recovered;
 }
 
 // src/sync-engine.ts
@@ -1675,6 +1933,20 @@ var SyncEngine = class {
     }
     return true;
   }
+  /** A file deleted after scanning must be reconsidered by the next sync. */
+  async deferDeletedUpload(item, stats, hooks) {
+    var _a2;
+    if (item.action !== "upload_new" /* UploadNew */ && item.action !== "upload_modified" /* UploadModified */)
+      return false;
+    if (this.app.vault.getAbstractFileByPath(item.path) || await this.onDisk(item.path))
+      return false;
+    if (!await this.storageAvailable(hooks)) {
+      (_a2 = this.halt) != null ? _a2 : this.halt = { kind: "storage" };
+    } else {
+      stats.skipped++;
+    }
+    return true;
+  }
   /**
    * Runs the plan in three passes — creates, then updates, then deletes —
    * with a bounded number of transfers in flight inside each pass.
@@ -1804,7 +2076,7 @@ var SyncEngine = class {
     if (live.direction === "pull" /* Pull */)
       return null;
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian4.TFile))
+    if (!(file instanceof import_obsidian5.TFile))
       return null;
     if (this.stateManager.excludes(path, file.stat.size, this.settings))
       return null;
@@ -1837,19 +2109,41 @@ var SyncEngine = class {
     }
     let failure;
     try {
+      if (await this.deferDeletedUpload(item, live.stats, live.hooks)) {
+        if (queue)
+          queue.finished(item);
+        return;
+      }
       const file = this.app.vault.getAbstractFileByPath(item.path);
-      if (!(file instanceof import_obsidian4.TFile))
+      if (!(file instanceof import_obsidian5.TFile))
         throw new Error(t("error.localMissing", { path: item.path }));
       const mtime = file.stat.mtime;
-      const data = await this.app.vault.readBinary(file);
-      await this.client.uploadFile(this.client.toRemotePath(item.path), data);
-      const hash = md5(data);
-      live.localSnapshot[item.path] = { path: item.path, mtime, size: data.byteLength, md5: hash };
-      live.remoteSnapshot[item.path] = { path: item.path, mtime: Date.now(), size: data.byteLength, md5: hash };
+      const upload = async () => {
+        if (this.shouldStop())
+          throw new Error("Transfer cancelled");
+        const payload = needsMobileTransfer(file.stat.size) ? await vaultFileBlob(this.app, file) : await this.app.vault.readBinary(file);
+        const size = payload instanceof Blob ? payload.size : payload.byteLength;
+        const hash = payload instanceof Blob ? await hashStream(payload.stream().getReader(), () => this.shouldStop()) : md5(payload);
+        if (payload instanceof Blob)
+          await this.client.uploadBlob(this.client.toRemotePath(item.path), payload, () => this.shouldStop());
+        else
+          await this.client.uploadFile(this.client.toRemotePath(item.path), payload);
+        live.localSnapshot[item.path] = { path: item.path, mtime, size, md5: hash };
+        live.remoteSnapshot[item.path] = { path: item.path, mtime: Date.now(), size, md5: hash };
+      };
+      if (needsMobileTransfer(file.stat.size))
+        await withMobileUpload(upload);
+      else
+        await upload();
       live.completed.add(item.path);
       live.stats.uploaded++;
       this.failureStreak = 0;
     } catch (e) {
+      if (await this.deferDeletedUpload(item, live.stats, live.hooks)) {
+        if (queue)
+          queue.finished(item);
+        return;
+      }
       console.error(`[YaDisk Sync] Error processing ${item.path}:`, e);
       failure = describeError(e);
       live.stats.errors++;
@@ -1874,7 +2168,15 @@ var SyncEngine = class {
     switch (item.action) {
       case "upload_new" /* UploadNew */:
       case "upload_modified" /* UploadModified */: {
-        await this.executeUpload(item);
+        if (await this.deferDeletedUpload(item, stats, hooks))
+          return false;
+        try {
+          await this.executeUpload(item);
+        } catch (error) {
+          if (await this.deferDeletedUpload(item, stats, hooks))
+            return false;
+          throw error;
+        }
         stats.uploaded++;
         const local = localSnapshot[item.path];
         if (local) {
@@ -1899,7 +2201,7 @@ var SyncEngine = class {
         }
         stats.downloaded++;
         const file = this.app.vault.getAbstractFileByPath(item.path);
-        if (item.remoteRecord && file instanceof import_obsidian4.TFile) {
+        if (item.remoteRecord && file instanceof import_obsidian5.TFile) {
           localSnapshot[item.path] = {
             path: item.path,
             mtime: file.stat.mtime,
@@ -2117,11 +2419,18 @@ var SyncEngine = class {
   }
   async executeUpload(item) {
     const file = this.app.vault.getAbstractFileByPath(item.path);
-    if (!file || !(file instanceof import_obsidian4.TFile))
+    if (!file || !(file instanceof import_obsidian5.TFile))
       throw new Error(t("error.localMissing", { path: item.path }));
-    const data = await this.app.vault.readBinary(file);
     const remotePath = this.client.toRemotePath(item.path);
-    await this.client.uploadFile(remotePath, data);
+    if (needsMobileTransfer(file.stat.size)) {
+      await withMobileUpload(async () => {
+        if (this.shouldStop())
+          throw new Error("Transfer cancelled");
+        await this.client.uploadBlob(remotePath, await vaultFileBlob(this.app, file), () => this.shouldStop());
+      });
+    } else {
+      await this.client.uploadFile(remotePath, await this.app.vault.readBinary(file));
+    }
   }
   /**
    * Returns false when the download was abandoned because the local file
@@ -2135,13 +2444,16 @@ var SyncEngine = class {
     if (this.hasLocalFileChanged(item))
       return false;
     const remotePath = this.client.toRemotePath(item.path);
+    if (item.remoteRecord && needsMobileTransfer(item.remoteRecord.size, mobileDownloadChunkBytes(this.settings.mobileDownloadChunkSizeMB))) {
+      return this.executeMobileDownload(item, hooks, remotePath);
+    }
     const data = await this.client.downloadFile(remotePath);
     if (this.hasLocalFileChanged(item))
       return false;
     if (hooks.onFileWritten)
       hooks.onFileWritten(item.path);
     const existingFile = this.app.vault.getAbstractFileByPath(item.path);
-    if (existingFile && existingFile instanceof import_obsidian4.TFile) {
+    if (existingFile && existingFile instanceof import_obsidian5.TFile) {
       await this.app.vault.modifyBinary(existingFile, data);
     } else {
       const parentPath = item.path.substring(0, item.path.lastIndexOf("/"));
@@ -2152,12 +2464,56 @@ var SyncEngine = class {
     }
     return true;
   }
+  async executeMobileDownload(item, hooks, remotePath) {
+    const adapter = this.app.vault.adapter;
+    const folder = `${this.app.vault.configDir}/plugins/yadisk-sync/transfers`;
+    await ensureStagingFolder(adapter, folder);
+    const temp = `${folder}/${Date.now()}-${Math.random().toString(16).slice(2)}.part`;
+    try {
+      await adapter.writeBinary(temp, new ArrayBuffer(0));
+      const record = item.remoteRecord;
+      if (!/^[a-f0-9]{32}$/i.test(record.md5))
+        throw new Error("Remote checksum required for a safe ranged download");
+      const hash = await this.client.downloadFileTo(remotePath, record.size, (data) => adapter.appendBinary(temp, data), () => this.shouldStop(), this.settings.mobileDownloadChunkSizeMB);
+      if (record.md5 && hash !== record.md5)
+        throw new Error("Downloaded checksum mismatch; original preserved");
+      const stat = await adapter.stat(temp);
+      if (!stat || stat.size !== record.size)
+        throw new Error("Downloaded size mismatch; original preserved");
+      if (this.shouldStop())
+        throw new Error("Transfer cancelled");
+      if (this.hasLocalFileChanged(item))
+        return false;
+      const parent = item.path.substring(0, item.path.lastIndexOf("/"));
+      if (parent)
+        await this.ensureLocalFolder(parent, hooks);
+      if (hooks.onFileWritten)
+        hooks.onFileWritten(item.path);
+      await replaceStaged(adapter, temp, item.path);
+      const written = await adapter.stat(item.path);
+      let visible = false;
+      for (let i = 0; i < 60; i++) {
+        const file = this.app.vault.getAbstractFileByPath(item.path);
+        if (file instanceof import_obsidian5.TFile && written && file.stat.size === written.size && Math.abs(file.stat.mtime - written.mtime) <= 1) {
+          visible = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (!visible)
+        throw new Error("Downloaded file saved; waiting for Obsidian to update its index");
+      return true;
+    } finally {
+      if (await adapter.exists(temp))
+        await adapter.remove(temp);
+    }
+  }
   hasLocalFileChanged(item) {
     const file = this.app.vault.getAbstractFileByPath(item.path);
     if (!item.localRecord) {
-      return file instanceof import_obsidian4.TFile;
+      return file instanceof import_obsidian5.TFile;
     }
-    if (!(file instanceof import_obsidian4.TFile))
+    if (!(file instanceof import_obsidian5.TFile))
       return true;
     return file.stat.mtime !== item.localRecord.mtime || file.stat.size !== item.localRecord.size;
   }
@@ -2206,6 +2562,7 @@ function byDepthDesc(a, b) {
 }
 
 // src/sync-state.ts
+var import_obsidian6 = require("obsidian");
 var EMPTY_STATE = {
   lastSyncTime: 0,
   localSnapshot: {},
@@ -2284,7 +2641,8 @@ var SyncStateManager = class {
     return [
       ...settings.excludePatterns,
       `${configDir}/workspace*.json`,
-      `${configDir}/plugins/*/data.json`
+      `${configDir}/plugins/*/data.json`,
+      `${configDir}/plugins/yadisk-sync/transfers/**`
     ];
   }
   /** Whether a file of this path and size is left out of syncing. */
@@ -2315,6 +2673,13 @@ var SyncStateManager = class {
     return { snapshot, skipped };
   }
   async buildLocalSnapshot(settings, prevSnapshot, onProgress, shouldStop) {
+    const recovered = await recoverStaged(this.app.vault.adapter, `${this.app.vault.configDir}/plugins/yadisk-sync/transfers`);
+    for (const path of recovered) {
+      for (let n = 0; n < 60 && !(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian6.TFile); n++)
+        await new Promise((r) => setTimeout(r, 50));
+      if (!(this.app.vault.getAbstractFileByPath(path) instanceof import_obsidian6.TFile))
+        throw new Error("Recovered file is not indexed yet; sync stopped safely");
+    }
     const files = this.app.vault.getFiles();
     const snapshot = {};
     const skipped = /* @__PURE__ */ new Set();
@@ -2338,8 +2703,7 @@ var SyncStateManager = class {
       if (prev && prev.mtime === file.stat.mtime && prev.size === file.stat.size) {
         hash = prev.md5;
       } else {
-        const data = await this.app.vault.readBinary(file);
-        hash = md5(data);
+        hash = await hashVaultFile(this.app, file, shouldStop);
       }
       snapshot[file.path] = {
         path: file.path,
@@ -2366,7 +2730,7 @@ var SyncStateManager = class {
 };
 
 // src/progress.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var RENDER_INTERVAL_MS = 250;
 var SyncProgress = class {
   constructor(onCancel, display = "delayed" /* Delayed */, onUpdate) {
@@ -2466,7 +2830,7 @@ var SyncProgress = class {
         this.onCancel();
       });
     });
-    this.notice = new import_obsidian5.Notice(frag, 0);
+    this.notice = new import_obsidian7.Notice(frag, 0);
   }
   clearTimer() {
     if (this.appearTimer !== null) {
@@ -2489,8 +2853,8 @@ var SyncProgress = class {
 };
 
 // src/settings.ts
-var import_obsidian6 = require("obsidian");
-var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
+var import_obsidian8 = require("obsidian");
+var YaDiskSyncSettingTab = class extends import_obsidian8.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     /** A remote folder being typed, not yet handed to the plugin. */
@@ -2513,7 +2877,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
     containerEl.empty();
     containerEl.addClass("yadisk-sync-settings");
     setLanguage(this.plugin.settings.language);
-    new import_obsidian6.Setting(containerEl).setName(t("language.name")).setDesc(t("language.desc")).addDropdown(
+    new import_obsidian8.Setting(containerEl).setName(t("language.name")).setDesc(t("language.desc")).addDropdown(
       (dd) => dd.addOption("auto" /* Auto */, t("language.auto")).addOption("en" /* English */, "English").addOption("ru" /* Russian */, "\u0420\u0443\u0441\u0441\u043A\u0438\u0439").setValue(this.plugin.settings.language).onChange((value) => {
         this.plugin.settings.language = value;
         this.plugin.queueSaveSettings();
@@ -2521,17 +2885,17 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
         this.plugin.queue.notify();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("auth.heading")).setHeading();
+    new import_obsidian8.Setting(containerEl).setName(t("auth.heading")).setHeading();
     const isAuthorized = !!this.plugin.settings.accessToken;
     if (!isAuthorized) {
-      const authSetting = new import_obsidian6.Setting(containerEl).setName(t("auth.signIn")).setDesc(t("auth.signInDesc"));
+      const authSetting = new import_obsidian8.Setting(containerEl).setName(t("auth.signIn")).setDesc(t("auth.signInDesc"));
       authSetting.addButton(
         (btn) => btn.setButtonText(t("auth.signIn")).setCta().onClick(() => {
           const url = this.plugin.client.getAuthUrl();
           window.open(url);
         })
       );
-      const codeSetting = new import_obsidian6.Setting(containerEl).setName(t("auth.code")).setDesc(t("auth.codeDesc"));
+      const codeSetting = new import_obsidian8.Setting(containerEl).setName(t("auth.code")).setDesc(t("auth.codeDesc"));
       let codeValue = "";
       codeSetting.addText(
         (text) => text.setPlaceholder(t("auth.codePlaceholder")).onChange((value) => {
@@ -2541,34 +2905,34 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
       codeSetting.addButton(
         (btn) => btn.setButtonText(t("auth.confirm")).onClick(async () => {
           if (!codeValue) {
-            new import_obsidian6.Notice(t("auth.enterCode"));
+            new import_obsidian8.Notice(t("auth.enterCode"));
             return;
           }
           try {
             btn.setButtonText("...");
             btn.buttonEl.disabled = true;
             await this.plugin.client.exchangeCode(codeValue);
-            new import_obsidian6.Notice(t("auth.success"));
+            new import_obsidian8.Notice(t("auth.success"));
             await this.plugin.saveSettings();
             this.display();
           } catch (e) {
-            new import_obsidian6.Notice(t("error", { message: e instanceof Error ? e.message : String(e) }));
+            new import_obsidian8.Notice(t("error", { message: e instanceof Error ? e.message : String(e) }));
             btn.setButtonText(t("auth.confirm"));
             btn.buttonEl.disabled = false;
           }
         })
       );
     } else {
-      new import_obsidian6.Setting(containerEl).setName(t("auth.account")).setDesc(t("auth.authorized")).addButton(
+      new import_obsidian8.Setting(containerEl).setName(t("auth.account")).setDesc(t("auth.authorized")).addButton(
         (btn) => btn.setButtonText(t("auth.check")).onClick(async () => {
           var _a2, _b2;
           try {
             const info = await this.plugin.client.getDiskInfo();
             const login = ((_a2 = info.user) == null ? void 0 : _a2.display_name) || ((_b2 = info.user) == null ? void 0 : _b2.login) || "\u2014";
             const freeGB = ((info.total_space - info.used_space) / (1024 * 1024 * 1024)).toFixed(2);
-            new import_obsidian6.Notice(t("auth.free", { login, free: freeGB }));
+            new import_obsidian8.Notice(t("auth.free", { login, free: freeGB }));
           } catch (e) {
-            new import_obsidian6.Notice(t("error", { message: e instanceof Error ? e.message : String(e) }));
+            new import_obsidian8.Notice(t("error", { message: e instanceof Error ? e.message : String(e) }));
           }
         })
       ).addButton(
@@ -2581,26 +2945,26 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
         })
       );
     }
-    new import_obsidian6.Setting(containerEl).setName(t("sync.heading")).setHeading();
-    new import_obsidian6.Setting(containerEl).setName(t("remote.name")).setDesc(t("remote.desc")).addText((text) => {
+    new import_obsidian8.Setting(containerEl).setName(t("sync.heading")).setHeading();
+    new import_obsidian8.Setting(containerEl).setName(t("remote.name")).setDesc(t("remote.desc")).addText((text) => {
       text.setPlaceholder("/vault").setValue(this.plugin.settings.remotePath).onChange((value) => {
         this.typedRemotePath = value;
       });
       text.inputEl.addEventListener("change", () => this.commitRemotePath());
     });
-    new import_obsidian6.Setting(containerEl).setName(t("direction.name")).addDropdown(
+    new import_obsidian8.Setting(containerEl).setName(t("direction.name")).addDropdown(
       (dd) => dd.addOption("bidirectional" /* Bidirectional */, t("direction.bidirectional")).addOption("push" /* Push */, t("direction.push")).addOption("pull" /* Pull */, t("direction.pull")).setValue(this.plugin.settings.syncDirection).onChange((value) => {
         this.plugin.settings.syncDirection = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("conflict.name")).addDropdown(
+    new import_obsidian8.Setting(containerEl).setName(t("conflict.name")).addDropdown(
       (dd) => dd.addOption("newer_wins" /* NewerWins */, t("conflict.newer")).addOption("local_wins" /* LocalWins */, t("conflict.local")).addOption("remote_wins" /* RemoteWins */, t("conflict.remote")).addOption("ask" /* Ask */, t("conflict.ask")).setValue(this.plugin.settings.conflictStrategy).onChange((value) => {
         this.plugin.settings.conflictStrategy = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("deletions.name")).setDesc(t("deletions.desc")).addDropdown((dd) => {
+    new import_obsidian8.Setting(containerEl).setName(t("deletions.name")).setDesc(t("deletions.desc")).addDropdown((dd) => {
       const options = [10, 20, 50, 100, 250, 500, 1e3];
       const current2 = this.plugin.settings.deleteConfirmThreshold;
       if (!options.includes(current2)) {
@@ -2615,7 +2979,7 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
         this.plugin.queueSaveSettings();
       });
     });
-    new import_obsidian6.Setting(containerEl).setName(t("interval.name")).setDesc(t("interval.desc")).addDropdown((dd) => {
+    new import_obsidian8.Setting(containerEl).setName(t("interval.name")).setDesc(t("interval.desc")).addDropdown((dd) => {
       const options = [
         [0, t("interval.off")],
         [10, t("interval.seconds", { count: 10 })],
@@ -2640,14 +3004,14 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
         this.plugin.queueSaveSettings();
       });
     });
-    new import_obsidian6.Setting(containerEl).setName(t("startup.name")).addToggle(
+    new import_obsidian8.Setting(containerEl).setName(t("startup.name")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.syncOnStartup).onChange((value) => {
         this.plugin.settings.syncOnStartup = value;
         this.plugin.queueSaveSettings();
       })
     );
     const configDir = this.app.vault.configDir;
-    new import_obsidian6.Setting(containerEl).setName(t("exclude.name")).setDesc(t("exclude.desc")).addTextArea(
+    new import_obsidian8.Setting(containerEl).setName(t("exclude.name")).setDesc(t("exclude.desc")).addTextArea(
       (ta) => ta.setPlaceholder(`${configDir}/workspace*.json
 .trash/**`).setValue(this.plugin.settings.excludePatterns.join("\n")).then((t2) => {
         t2.inputEl.rows = 5;
@@ -2657,50 +3021,59 @@ var YaDiskSyncSettingTab = class extends import_obsidian6.PluginSettingTab {
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("maxSize.name")).addText(
+    new import_obsidian8.Setting(containerEl).setName(t("maxSize.name")).addText(
       (text) => text.setPlaceholder("50").setValue(String(this.plugin.settings.maxFileSizeMB)).onChange((value) => {
         const num = parseInt(value, 10);
         this.plugin.settings.maxFileSizeMB = isNaN(num) ? 50 : Math.max(1, num);
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("concurrency.name")).setDesc(t("concurrency.desc")).addSlider(
+    new import_obsidian8.Setting(containerEl).setName(t("chunkSize.name")).setDesc(t("chunkSize.desc")).addDropdown((dd) => {
+      for (const size of MOBILE_DOWNLOAD_CHUNK_SIZES_MB) {
+        dd.addOption(String(size), t("chunkSize.option", { count: size }));
+      }
+      dd.setValue(String(this.plugin.settings.mobileDownloadChunkSizeMB)).onChange((value) => {
+        this.plugin.settings.mobileDownloadChunkSizeMB = mobileDownloadChunkSizeMB(Number(value));
+        this.plugin.queueSaveSettings();
+      });
+    });
+    new import_obsidian8.Setting(containerEl).setName(t("concurrency.name")).setDesc(t("concurrency.desc")).addSlider(
       (slider) => slider.setLimits(MIN_CONCURRENCY, MAX_CONCURRENCY, 1).setValue(this.plugin.settings.concurrency).setDynamicTooltip().onChange((value) => {
         this.plugin.settings.concurrency = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("scanConcurrency.name")).setDesc(t("scanConcurrency.desc")).addSlider(
+    new import_obsidian8.Setting(containerEl).setName(t("scanConcurrency.name")).setDesc(t("scanConcurrency.desc")).addSlider(
       (slider) => slider.setLimits(MIN_SCAN_CONCURRENCY, MAX_SCAN_CONCURRENCY, 1).setValue(this.plugin.settings.scanConcurrency).setDynamicTooltip().onChange((value) => {
         this.plugin.settings.scanConcurrency = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("progress.name")).setDesc(t("progress.desc")).addDropdown(
+    new import_obsidian8.Setting(containerEl).setName(t("progress.name")).setDesc(t("progress.desc")).addDropdown(
       (dd) => dd.addOption("delayed" /* Delayed */, t("progress.delayed")).addOption("always" /* Always */, t("progress.always")).addOption("never" /* Never */, t("progress.never")).setValue(this.plugin.settings.progressDisplay).onChange((value) => {
         this.plugin.settings.progressDisplay = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("statusCounts.name")).setDesc(t("statusCounts.desc")).addToggle(
+    new import_obsidian8.Setting(containerEl).setName(t("statusCounts.name")).setDesc(t("statusCounts.desc")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.statusBarCounts).onChange((value) => {
         this.plugin.settings.statusBarCounts = value;
         this.plugin.queueSaveSettings();
         this.plugin.queue.notify();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("screen.name")).setDesc(t("screen.desc")).addToggle(
+    new import_obsidian8.Setting(containerEl).setName(t("screen.name")).setDesc(t("screen.desc")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.keepScreenOn).onChange((value) => {
         this.plugin.settings.keepScreenOn = value;
         this.plugin.queueSaveSettings();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("fullSync.name")).setDesc(t("fullSync.desc")).addButton(
+    new import_obsidian8.Setting(containerEl).setName(t("fullSync.name")).setDesc(t("fullSync.desc")).addButton(
       (btn) => btn.setButtonText(t("fullSync.button")).onClick(() => {
         this.plugin.runFullSync();
       })
     );
-    new import_obsidian6.Setting(containerEl).setName(t("reset.name")).setDesc(t("reset.desc")).addButton(
+    new import_obsidian8.Setting(containerEl).setName(t("reset.name")).setDesc(t("reset.desc")).addButton(
       (btn) => btn.setButtonText(t("reset.button")).setWarning().onClick((evt) => {
         this.plugin.stateManager.resetState();
         void this.plugin.saveSettings();
@@ -2989,19 +3362,19 @@ var SyncQueue = class {
 };
 
 // src/queue-view.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/icon.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var SYNC_ICON = "yadisk-sync";
 var ARROWS = '<g class="yadisk-sync-arrows"><g transform="scale(4.1667)" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></g></g>';
 var LETTER = '<text x="53" y="48" text-anchor="middle" dominant-baseline="central" font-size="38" font-weight="700" fill="currentColor" stroke="none" style="font-family: var(--font-interface), sans-serif">\u042F</text>';
 function registerSyncIcon() {
-  (0, import_obsidian7.addIcon)(SYNC_ICON, ARROWS + LETTER);
+  (0, import_obsidian9.addIcon)(SYNC_ICON, ARROWS + LETTER);
 }
 
 // src/remaining.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 var ICONS = {
   upload: "upload",
   download: "download",
@@ -3022,7 +3395,7 @@ function renderRemaining(parent, queue) {
   for (const { kind, count } of remaining) {
     const item = line.createSpan({ cls: "yadisk-remaining-item" });
     item.setAttr("aria-label", `${t(LABELS[kind])}: ${count}`);
-    (0, import_obsidian8.setIcon)(item.createSpan({ cls: "yadisk-remaining-icon" }), ICONS[kind]);
+    (0, import_obsidian10.setIcon)(item.createSpan({ cls: "yadisk-remaining-icon" }), ICONS[kind]);
     item.createSpan({ text: count.toLocaleString() });
   }
 }
@@ -3072,7 +3445,7 @@ var ACTION_LABELS = {
   ["conflict" /* Conflict */]: "queue.action.conflict",
   ["skip" /* Skip */]: "queue.action.skip"
 };
-var QueueView = class extends import_obsidian9.ItemView {
+var QueueView = class extends import_obsidian11.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -3205,7 +3578,7 @@ var QueueView = class extends import_obsidian9.ItemView {
     var _a2;
     const { details, summary, open } = this.collapsible(list, action, "yadisk-queue-group");
     summary.addClass("yadisk-queue-group-summary");
-    (0, import_obsidian9.setIcon)(summary.createSpan({ cls: "yadisk-queue-icon" }), ACTION_ICONS[action]);
+    (0, import_obsidian11.setIcon)(summary.createSpan({ cls: "yadisk-queue-icon" }), ACTION_ICONS[action]);
     const labelKey = GROUP_LABELS[action];
     summary.createSpan({ cls: "yadisk-queue-group-label", text: labelKey ? t(labelKey) : action });
     summary.createSpan({ cls: "yadisk-queue-group-count", text: String(count) });
@@ -3249,7 +3622,7 @@ var QueueView = class extends import_obsidian9.ItemView {
   localRow(list, path, kind) {
     const row = list.createDiv({ cls: "yadisk-queue-row is-pending" });
     row.setAttr("title", path);
-    (0, import_obsidian9.setIcon)(row.createSpan({ cls: "yadisk-queue-icon" }), LOCAL_ICONS[kind]);
+    (0, import_obsidian11.setIcon)(row.createSpan({ cls: "yadisk-queue-icon" }), LOCAL_ICONS[kind]);
     const slash = path.lastIndexOf("/");
     const body = row.createDiv({ cls: "yadisk-queue-body" });
     body.createDiv({ cls: "yadisk-queue-name", text: path.slice(slash + 1) });
@@ -3263,7 +3636,7 @@ var QueueView = class extends import_obsidian9.ItemView {
     const row = list.createDiv({ cls: `yadisk-queue-row is-${entry.status}` });
     row.setAttr("title", `${t(ACTION_LABELS[entry.action])}: ${entry.path}`);
     const icon = row.createSpan({ cls: "yadisk-queue-icon" });
-    (0, import_obsidian9.setIcon)(icon, entry.status === "failed" ? "alert-circle" : ACTION_ICONS[entry.action]);
+    (0, import_obsidian11.setIcon)(icon, entry.status === "failed" ? "alert-circle" : ACTION_ICONS[entry.action]);
     const slash = entry.path.lastIndexOf("/");
     const body = row.createDiv({ cls: "yadisk-queue-body" });
     body.createDiv({ cls: "yadisk-queue-name", text: entry.path.slice(slash + 1) });
@@ -3280,7 +3653,7 @@ var QueueView = class extends import_obsidian9.ItemView {
 };
 
 // src/pause-modal.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 var MAX_LISTED = 200;
 var CONFIRM_DELAY_S = 10;
 function describeBlock(block, partial) {
@@ -3307,9 +3680,9 @@ function showPauseNotice(text, onReview) {
     const reviewBtn = wrapper.createEl("button", { text: t("queue.review") });
     reviewBtn.addEventListener("click", () => onReview());
   });
-  return new import_obsidian10.Notice(frag, 0);
+  return new import_obsidian12.Notice(frag, 0);
 }
-var PauseModal = class extends import_obsidian10.Modal {
+var PauseModal = class extends import_obsidian12.Modal {
   constructor(app, block, partial, approvedEarlier, actions) {
     super(app);
     this.block = block;
@@ -3320,7 +3693,7 @@ var PauseModal = class extends import_obsidian10.Modal {
   }
   onOpen() {
     this.contentEl.addClass("yadisk-pause-modal");
-    new import_obsidian10.Setting(this.contentEl).setName(t("pause.title")).setHeading();
+    new import_obsidian12.Setting(this.contentEl).setName(t("pause.title")).setHeading();
     const block = this.block;
     switch (block.kind) {
       case "storage":
@@ -3465,7 +3838,7 @@ var STORAGE_CHECK_ATTEMPTS = 3;
 var STORAGE_CHECK_RETRY_MS = 1e3;
 var STORAGE_CHECK_TIMEOUT_MS = 5e3;
 var PAUSE_REMINDER_MS = 10 * 60 * 1e3;
-var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
+var YaDiskSyncPlugin = class extends import_obsidian13.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -3519,6 +3892,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     const data = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (_a2 = data == null ? void 0 : data.settings) != null ? _a2 : {});
     this.settings.concurrency = clampConcurrency(this.settings.concurrency);
+    this.settings.mobileDownloadChunkSizeMB = mobileDownloadChunkSizeMB(this.settings.mobileDownloadChunkSizeMB);
     this.settings.deleteConfirmThreshold = clampThreshold(this.settings.deleteConfirmThreshold);
     this.settings.remotePath = normalizeRemotePath(this.settings.remotePath || DEFAULT_SETTINGS.remotePath);
     const legacyMinutes = (_b2 = data == null ? void 0 : data.settings) == null ? void 0 : _b2.autoSyncInterval;
@@ -3593,7 +3967,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     this.statusBarButtonEl.addClass("mod-clickable", "yadisk-status-button");
     this.statusBarButtonEl.setAttr("aria-label", t("button.sync"));
     this.statusBarButtonEl.setAttr("data-tooltip-position", "top");
-    (0, import_obsidian11.setIcon)(this.statusBarButtonEl, QUEUE_VIEW_ICON);
+    (0, import_obsidian13.setIcon)(this.statusBarButtonEl, QUEUE_VIEW_ICON);
     this.registerDomEvent(this.statusBarButtonEl, "click", () => void this.runSync());
     this.statusBarEl = this.addStatusBarItem();
     this.statusBarEl.addClass("mod-clickable");
@@ -3645,7 +4019,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
   showError(text) {
     var _a2;
     (_a2 = this.errorNotice) == null ? void 0 : _a2.hide();
-    this.errorNotice = new import_obsidian11.Notice(text, 0);
+    this.errorNotice = new import_obsidian13.Notice(text, 0);
   }
   clearError() {
     var _a2;
@@ -3659,7 +4033,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
       return;
     if (this.consumeSelfWrite(file.path))
       return;
-    if (file instanceof import_obsidian11.TFile)
+    if (file instanceof import_obsidian13.TFile)
       this.queue.noteLocalChange(file.path, kind, oldPath);
     this.scheduleDebouncedSync();
   }
@@ -3855,12 +4229,12 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
       return;
     }
     if (!this.settings.accessToken) {
-      new import_obsidian11.Notice(t("notice.authorizeFirst"));
+      new import_obsidian13.Notice(t("notice.authorizeFirst"));
       return;
     }
     if (!this.app.workspace.layoutReady) {
       if (trigger === "manual")
-        new import_obsidian11.Notice(t("notice.vaultLoading"));
+        new import_obsidian13.Notice(t("notice.vaultLoading"));
       return;
     }
     if (this.pause && trigger === "auto") {
@@ -3891,6 +4265,8 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     this.queue.begin();
     this.refreshQueue();
     try {
+      if (import_obsidian13.Platform.isMobile)
+        await this.acquireWakeLock();
       const remoteUnchanged = remoteUnchangedHint != null ? remoteUnchangedHint : await this.probeRemote(trigger === "manual") === "unchanged";
       const stats = await engine.run(directionOverride, {
         reporter: progress,
@@ -4081,7 +4457,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     if (stats.skipped > 0)
       counts += t("result.kept", { count: stats.skipped });
     if (stats.aborted) {
-      new import_obsidian11.Notice(t("result.cancelled", { counts }));
+      new import_obsidian13.Notice(t("result.cancelled", { counts }));
       this.updateStatusBar("idle");
       return;
     }
@@ -4096,7 +4472,7 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     this.updateStatusBar("idle");
     if (trigger !== "manual")
       return;
-    new import_obsidian11.Notice(moved > 0 ? t("result.complete", { counts }) : t("result.upToDate"));
+    new import_obsidian13.Notice(moved > 0 ? t("result.complete", { counts }) : t("result.upToDate"));
   }
   /** Re-shows the progress indicator after it was dismissed, or the review when on hold. */
   showSyncStatus() {
@@ -4105,15 +4481,15 @@ var YaDiskSyncPlugin = class extends import_obsidian11.Plugin {
     } else if (this.pause) {
       this.openPauseReview();
     } else {
-      new import_obsidian11.Notice(t("notice.noSync"));
+      new import_obsidian13.Notice(t("notice.noSync"));
     }
   }
   abortSync() {
     if (this.currentEngine) {
       this.currentEngine.abort();
-      new import_obsidian11.Notice(t("notice.stopping"));
+      new import_obsidian13.Notice(t("notice.stopping"));
     } else {
-      new import_obsidian11.Notice(t("notice.noSync"));
+      new import_obsidian13.Notice(t("notice.noSync"));
     }
   }
   updateStatusBar(status) {

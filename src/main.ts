@@ -1,4 +1,4 @@
-import { Notice, Plugin, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
+import { Notice, Platform, Plugin, TAbstractFile, TFile, WorkspaceLeaf, setIcon } from "obsidian";
 import {
 	YaDiskSyncSettings,
 	DEFAULT_SETTINGS,
@@ -16,6 +16,7 @@ import { YandexDiskClient, describeError } from "./yandex-client";
 import { FAILURE_STREAK_LIMIT, SyncEngine, SyncStats } from "./sync-engine";
 import { SyncStateManager } from "./sync-state";
 import { SyncProgress } from "./progress";
+import { mobileDownloadChunkSizeMB } from "./transfer-settings";
 import { YaDiskSyncSettingTab } from "./settings";
 import { LocalChangeKind, SyncQueue } from "./queue";
 import { QUEUE_VIEW_ICON, QUEUE_VIEW_TYPE, QueueView } from "./queue-view";
@@ -156,6 +157,7 @@ export default class YaDiskSyncPlugin extends Plugin {
 
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data?.settings ?? {});
 		this.settings.concurrency = clampConcurrency(this.settings.concurrency);
+		this.settings.mobileDownloadChunkSizeMB = mobileDownloadChunkSizeMB(this.settings.mobileDownloadChunkSizeMB);
 		this.settings.deleteConfirmThreshold = clampThreshold(this.settings.deleteConfirmThreshold);
 		// Also repairs a folder saved without its leading slash, which no
 		// listing ever matched.
@@ -614,6 +616,9 @@ export default class YaDiskSyncPlugin extends Plugin {
 		this.refreshQueue();
 
 		try {
+			// Scanning or transferring one large mobile file can outlast the
+			// screen timeout even when the transfer plan has fewer than 50 items.
+			if (Platform.isMobile) await this.acquireWakeLock();
 			// A sync set off by a local edit should not pay for a walk of the
 			// whole remote tree. One request settles whether that walk would
 			// find anything; the caller may already know the answer.

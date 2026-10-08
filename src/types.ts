@@ -1,3 +1,5 @@
+import { DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB } from "./transfer-settings";
+
 export enum Language {
 	/** Follow Obsidian's own interface language. */
 	Auto = "auto",
@@ -50,6 +52,8 @@ export interface YaDiskSyncSettings {
 	autoSyncSeconds: number;
 	excludePatterns: string[];
 	maxFileSizeMB: number;
+	/** Maximum bytes per mobile download request, expressed in MiB. */
+	mobileDownloadChunkSizeMB: number;
 	syncOnStartup: boolean;
 	/** How many uploads and downloads may be in flight at once. */
 	concurrency: number;
@@ -102,6 +106,7 @@ export const DEFAULT_SETTINGS: YaDiskSyncSettings = {
 		".trash/**",
 	],
 	maxFileSizeMB: 50,
+	mobileDownloadChunkSizeMB: DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB,
 	syncOnStartup: true,
 	concurrency: 4,
 	scanConcurrency: 12,

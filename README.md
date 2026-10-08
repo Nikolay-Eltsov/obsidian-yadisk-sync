@@ -67,6 +67,7 @@ Synchronize your Obsidian vault with Yandex Disk. Supports bidirectional sync, c
 | Exclude patterns | Glob patterns to skip, one per line |
 | Max file size | Files above this size are not synced |
 | Parallel transfers | How many files to upload or download at once (1–8) |
+| Mobile download chunk size | Android/iOS download parts: 1, 2, 4 or 8 MiB (default 4). Smaller parts reduce memory use and increase request count. Changes apply to the next file. |
 | Parallel folder scans | How many folders on Yandex Disk to read at once when looking for changes (1–24) |
 | Show sync progress | When the progress indicator appears: only for long syncs, always, or never (default; the queue panel shows the same) |
 | Remaining files in the status bar | During a sync, show how many files are left to upload, download and delete. Desktop only; off by default, the queue panel shows the same |
@@ -95,6 +96,8 @@ The plugin uses a **three-way merge** algorithm:
 - Resolves conflicts based on your chosen strategy (newer wins, local wins, remote wins, or ask)
 
 Files are compared by MD5, which Yandex Disk reports for every file, so a sync never re-transfers content that already matches on both sides.
+
+On mobile, files larger than the selected **Mobile download chunk size** are downloaded using HTTP Range requests and appended to a temporary file. The plugin checks the complete file's MD5 and size before replacing the local copy, and keeps a recovery journal while replacing an existing file. The original copy is restored if the replacement fails. This avoids passing the entire large download through Obsidian's native Base64 bridge. Changing the chunk size does not exclude files; **Max file size** remains the separate inclusion limit. Large local files are also hashed as a stream. This requires Obsidian 1.12.3 or later.
 
 A sync that fails or is interrupted partway through retries what it did not finish on the next run, rather than counting it as done. Failures are shown as they happen, with the file and the reason, and if 20 transfers fail in a row the sync stops and says why instead of working through the rest.
 

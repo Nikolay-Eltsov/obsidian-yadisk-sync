@@ -3,6 +3,8 @@ import { t } from "./i18n";
 import { YaDiskResource, YaDiskDiskInfo, YaDiskLink, YaDiskTokenResponse, FileRecord } from "./types";
 import { normalizePath, normalizeRemotePath, isoToTimestamp, Semaphore } from "./utils";
 import { getClientId, getClientSecret } from "./credentials";
+import { downloadInChunks } from "./mobile-transfer";
+import { mobileDownloadChunkBytes, DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB } from "./transfer-settings";
 
 const API_BASE = "https://cloud-api.yandex.net/v1/disk";
 const OAUTH_BASE = "https://oauth.yandex.ru";
@@ -571,6 +573,61 @@ export class YandexDiskClient {
 		const resp = await this.requestStorage({ url: link.href, method: "GET" });
 		return resp.arrayBuffer;
 	}
+
+ async downloadFileTo(remotePath: string, size: number, append: (data: ArrayBuffer) => Promise<void>, stop: () => boolean, chunkSizeMB = DEFAULT_MOBILE_DOWNLOAD_CHUNK_SIZE_MB): Promise<string> {
+  const params = new URLSearchParams({ path: remotePath });
+  const linkResp = await this.request({ url: `${API_BASE}/resources/download?${params.toString()}` });
+  let link = linkResp.json as YaDiskLink;
+  // Browser fetch checks headers before consuming the body. requestUrl buffers
+  // even an ignored Range response, so it cannot be used for large downloads.
+  return downloadInChunks(size, async (start, end) => {
+   for (let attempt = 0; ; attempt++) {
+    if (stop()) throw new Error("Transfer cancelled");
+    const controller = new AbortController();
+    const timer = setInterval(() => { if (stop()) controller.abort(); }, 200);
+    try {
+     const response = await fetch(link.href, { headers: { Range: `bytes=${start}-${end}` }, signal: controller.signal });
+     const range = response.headers.get("Content-Range");
+     const expected = `bytes ${start}-${end}/${size}`;
+     if (response.status !== 206 || (range !== null && range !== expected)) {
+      await response.body?.cancel();
+      throw new YaDiskApiError(response.status, "Invalid partial download");
+     }
+     // Yandex's CORS policy hides Content-Range on Android. Status 206 and
+     // exact length establish a partial response; final MD5 verifies offsets.
+     return { status: response.status, headers: { "content-range": range ?? expected }, arrayBuffer: await response.arrayBuffer() };
+    } catch(error) {
+     if (stop() || attempt >= MAX_RETRIES || (error instanceof YaDiskApiError && !isRetryableStatus(error.status))) throw error;
+     await this.delay(YandexDiskClient.backoffMs(attempt));
+     link = (await this.request({ url: `${API_BASE}/resources/download?${params.toString()}` })).json as YaDiskLink;
+    } finally { clearInterval(timer); }
+   }
+  }, append, stop, mobileDownloadChunkBytes(chunkSizeMB));
+ }
+
+ async uploadBlob(remotePath: string, blob: Blob, stop: () => boolean): Promise<void> {
+  await this.ensureFolderExists(remotePath.substring(0, remotePath.lastIndexOf("/")));
+  const params = new URLSearchParams({ path: remotePath, overwrite: "true" });
+  const controller = new AbortController();
+  const timer = setInterval(() => { if (stop()) controller.abort(); }, 200);
+  try {
+   for (let attempt = 0; ; attempt++) {
+    if (stop()) throw new Error("Transfer cancelled");
+    try {
+     // A signed storage link can expire or name a temporarily unreachable
+     // uploader. Obtain a fresh link for every retry instead of reusing it.
+     const link = (await this.request({ url: `${API_BASE}/resources/upload?${params.toString()}` })).json as YaDiskLink;
+     const response = await fetch(link.href, { method: "PUT", body: blob, headers: { "Content-Type": "application/octet-stream" }, signal: controller.signal });
+     await response.body?.cancel();
+     if (!response.ok) throw new YaDiskApiError(response.status, "Upload failed");
+     return;
+    } catch(error) {
+     if (stop() || attempt >= MAX_RETRIES || (error instanceof YaDiskApiError && !isRetryableStatus(error.status))) throw error;
+     await this.delay(YandexDiskClient.backoffMs(attempt));
+    }
+   }
+  } finally { clearInterval(timer); }
+ }
 
 	async deleteResource(path: string, permanently = false): Promise<void> {
 		const params = new URLSearchParams({
